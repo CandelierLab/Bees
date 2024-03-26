@@ -3,7 +3,7 @@ import cv2 as cv
 
 # === Parameters ===========================================================
 
-mname = '/home/raphael/Science/Projects/Misc/Bees/Data/Videos - sNPF Pilot - 2024/MVI_0005.MP4'
+mname = '/home/raphael/Science/Projects/Misc/Bees/Data/Pilot_1/MVI_0005.MP4'
 
 # Box ROI (for initial crop)
 ROI_box = [450, 1450, 80, 1080]     # x0, x1, y0, y1
@@ -11,8 +11,6 @@ ROI_box = [450, 1450, 80, 1080]     # x0, x1, y0, y1
 # ==========================================================================
 
 cap = cv.VideoCapture(mname)
-
-
 
 while cap.isOpened():
  
