@@ -10,7 +10,7 @@ conda activate Bees
 Install the necessary modules:
 
 ```
-conda install numpy 
+conda install numpy pyyaml
 ```
 
 and 
