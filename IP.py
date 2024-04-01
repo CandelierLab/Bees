@@ -185,11 +185,12 @@ class processor:
       Img = self.get_frame(cap)
       if Img is None: break
     
-      Img = self.background - Img
+      # Img = self.background - Img
 
-      _, BW = cv.threshold(Img, 0.1, 1, cv.THRESH_BINARY)
+      # _, BW = cv.threshold(Img, 0.03, 1, cv.THRESH_BINARY)
 
-      cv.imshow('frame', BW)
+      cv.imshow('frame', Img)
+      # cv.imshow('frame', BW)
 
       # cv.waitKey(0)
       # break
@@ -199,3 +200,20 @@ class processor:
 
     cap.release()
     cv.destroyAllWindows()
+
+  def viewer(self):
+
+    cap = cv.VideoCapture(self.file['movie']['path'])
+
+    def onChange(t):
+      cap.set(cv.CAP_PROP_POS_FRAMES, t)
+      _, frame = cap.read()
+      cv.imshow("mywindow", frame)
+
+    cv.namedWindow('mywindow', cv.WINDOW_NORMAL)
+    cv.createTrackbar('time', 'mywindow', 0, self.param['T']-1, onChange)
+
+    onChange(0)
+    while True:
+      if cv.waitKey(1) == ord('q'):
+        break

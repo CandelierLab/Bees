@@ -16,4 +16,4 @@ print(P)
 
 # P.show(P.background)
 
-P.play()
+P.viewer()
