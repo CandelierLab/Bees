@@ -12,8 +12,10 @@ movie_file = 'Pilot_1/MVI_0005.MP4'
 
 P = IP.processor(movie_file)
 
-print(P)
+# print(P)
 
 # P.show(P.background)
 
-P.viewer()
+# P.viewer()
+
+P.play()

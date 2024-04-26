@@ -10,6 +10,69 @@ import numpy as np
 import cv2 as cv
 import project
 
+class Ellipse:
+
+  def __init__(self, Img):
+
+    # --- Computing moments
+    
+    # Object's pixels coordinates
+    J, I = np.where(Img)
+
+    # Lambda function to compute the moments
+    moment = lambda p, q: np.sum(np.power(I,p)*np.power(J,q))
+
+    # --- Get image moments
+    self.m00 = moment(0, 0)
+    self.m10 = moment(1, 0)
+    self.m01 = moment(0, 1)
+    self.m11 = moment(1, 1)
+    self.m02 = moment(0, 2)
+    self.m20 = moment(2, 0)
+
+    # --- Ellipse properties
+
+    # Barycenter
+    self.x = self.m10/self.m00
+    self.y = self.m01/self.m00
+
+    # Central moments (intermediary step)
+    a = self.m20/self.m00 - self.x**2
+    b = 2*(self.m11/self.m00 - self.x*self.y)
+    c = self.m02/self.m00 - self.y**2
+
+    # Orientation (radians)
+    self.theta = 1/2*np.arctan(b/(a-c)) 
+    self.theta += np.pi/2 if a<c else 0
+
+    # Minor and major axis
+    self.w = np.sqrt(8*(a+c-np.sqrt(b**2+(a-c)**2)))/2
+    self.l = np.sqrt(8*(a+c+np.sqrt(b**2+(a-c)**2)))/2
+
+    # % Ellipse focal points
+    # d = sqrt(E.l^2-E.w^2);
+    # E.x1 = E.x + d*cos(E.theta);
+    # E.y1 = E.y + d*sin(E.theta);
+    # E.x2 = E.x - d*cos(E.theta);
+    # E.y2 = E.y - d*sin(E.theta);
+
+    # % Ellipse direction
+    # if direct
+    #     tmp = [i-mean(i) j-mean(j)]*[cos(E.theta) -sin(E.theta) ; sin(E.theta) cos(E.theta)];
+    #     if skewness(tmp(:,1))>0
+            
+    #         % Fix direction
+    #         E.theta = mod(E.theta + pi, 2*pi);
+    #         tmp = [E.x1 E.y1];
+            
+    #         % Swap F1 and F2
+    #         E.x1 = E.x2;
+    #         E.y1 = E.y2;
+    #         E.x2 = tmp(1);
+    #         E.y2 = tmp(2);
+    #     end
+    # end
+
 class processor:
 
   def __init__(self, movie_file, verbose=True):
@@ -178,27 +241,72 @@ class processor:
     Play the movie
     '''
 
+    record = True
+
+    if record:
+      vfile = cv.VideoWriter('tracking_1.avi', cv.VideoWriter_fourcc(*'MJPG'), fps=25, frameSize=(self.param['width'], self.param['height'])) 
+
     cap = cv.VideoCapture(self.file['movie']['path'])
+
+    trace = []
 
     while cap.isOpened():
     
       Img = self.get_frame(cap)
       if Img is None: break
     
-      # Img = self.background - Img
+      Tmp = self.background - Img
 
-      # _, BW = cv.threshold(Img, 0.03, 1, cv.THRESH_BINARY)
+      _, BW = cv.threshold(Tmp, 0.03, 1, cv.THRESH_BINARY)
+      
+      # --- Find largest object      
+      cnts, _ = cv.findContours(BW.astype(np.uint8), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+      cnt = max(cnts, key=cv.contourArea)
 
-      cv.imshow('frame', Img)
-      # cv.imshow('frame', BW)
+      # Result
+      BW = np.zeros(Img.shape, np.uint8)
+      cv.drawContours(BW, [cnt], -1, 255, cv.FILLED)
+
+      # --- Compute equivalent ellipse
+
+      E = Ellipse(BW)
+
+      # print(E.__dict__)
+
+      # --- Display -------------------------------------------------------
+
+      # Images
+      norm = cv.normalize(Img, None, 0, 255, norm_type=cv.NORM_MINMAX, dtype=cv.CV_8U)
+      Res = cv.cvtColor(norm, cv.COLOR_GRAY2RGB)
+
+      # Ellipse
+      Res = cv.ellipse(Res, (int(E.x), int(E.y)), (int(E.l), int(E.w)), E.theta*180/np.pi, 0, 360, color=(255,0,255), thickness=1)
+
+      # --- Trace
+
+      trace.append((int(E.x), int(E.y)))
+      while len(trace)>50: trace.pop(0)
+      
+      pts = np.array(trace)
+      Res = cv.polylines(Res, [pts.reshape((-1, 1, 2))], False, color=(0,0,255), thickness=1)
+
+      # Display
+      cv.imshow('frame', Res)
 
       # cv.waitKey(0)
       # break
+
+      # Save
+      if record:
+        vfile.write(Res) 
 
       if cv.waitKey(1) == ord('q'):
         break
 
     cap.release()
+    if record:
+      vfile.release()
+
     cv.destroyAllWindows()
 
   def viewer(self):
