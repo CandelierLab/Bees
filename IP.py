@@ -84,11 +84,20 @@ class processor:
     # --- Settings
 
     self.dir = project.root + 'Files/' + movie_file[:-4] + os.sep
+    if not os.path.exists(self.dir):
+      os.makedirs(self.dir)
+
     self.file = {}
 
     # Parameters
     self.param = None
     self.file['parameters'] = self.dir + 'parameters.yml'
+    if not os.path.exists(self.file['parameters']):
+      with open(self.file['parameters'], 'w') as pfile:
+        pfile.write('''ROI: [0, 500, 0, 500]
+background: 
+  method: median
+  nFrames: 10''')
 
     # Movie
     self.file['movie'] = {}
@@ -236,14 +245,12 @@ class processor:
     cv.waitKey(0)
     cv.destroyAllWindows()
 
-  def play(self):
+  def play(self, record_movie=False):
     '''
     Play the movie
     '''
 
-    record = True
-
-    if record:
+    if record_movie:
       vfile = cv.VideoWriter('tracking_1.avi', cv.VideoWriter_fourcc(*'MJPG'), fps=25, frameSize=(self.param['width'], self.param['height'])) 
 
     cap = cv.VideoCapture(self.file['movie']['path'])
@@ -297,14 +304,14 @@ class processor:
       # break
 
       # Save
-      if record:
+      if record_movie:
         vfile.write(Res) 
 
       if cv.waitKey(1) == ord('q'):
         break
 
     cap.release()
-    if record:
+    if record_movie:
       vfile.release()
 
     cv.destroyAllWindows()
