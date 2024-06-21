@@ -10,11 +10,11 @@ conda activate Bees
 Install the necessary modules:
 
 ```
-conda install numpy pyyaml
+conda install numpy pyyaml pandas
 ```
 
 and 
 
 ```
-pip install opencv-python matplotlib
+pip install opencv-python matplotlib alive_progress
 ```

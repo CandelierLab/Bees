@@ -1,5 +1,7 @@
 '''
 Image processing tools
+
+NB: RWU 430pix for 90mm 
 '''
 
 import os
@@ -7,7 +9,10 @@ import time
 import warnings
 import yaml
 import numpy as np
+import pandas as pd
 import cv2 as cv
+from alive_progress import alive_bar
+
 import project
 
 class Ellipse:
@@ -95,6 +100,7 @@ class processor:
     if not os.path.exists(self.file['parameters']):
       with open(self.file['parameters'], 'w') as pfile:
         pfile.write('''ROI: [0, 500, 0, 500]
+pix2mm: 0.20930
 background: 
   method: median
   nFrames: 10''')
@@ -105,7 +111,10 @@ background:
     self.file['movie']['path'] = project.root + 'Data/' + movie_file
 
     # Background image
-    self.file['background'] = self.dir + 'Background.npy'
+    self.file['background'] = self.dir + 'background.npy'
+
+    # CSV export
+    self.file['traj'] = self.dir + 'trajectories.csv'
 
     # --- Load associated data
 
@@ -245,77 +254,6 @@ background:
     cv.waitKey(0)
     cv.destroyAllWindows()
 
-  def play(self, record_movie=False):
-    '''
-    Play the movie
-    '''
-
-    if record_movie:
-      vfile = cv.VideoWriter('tracking_1.avi', cv.VideoWriter_fourcc(*'MJPG'), fps=25, frameSize=(self.param['width'], self.param['height'])) 
-
-    cap = cv.VideoCapture(self.file['movie']['path'])
-
-    trace = []
-
-    while cap.isOpened():
-    
-      Img = self.get_frame(cap)
-      if Img is None: break
-    
-      Tmp = self.background - Img
-
-      _, BW = cv.threshold(Tmp, 0.03, 1, cv.THRESH_BINARY)
-      
-      # --- Find largest object      
-      cnts, _ = cv.findContours(BW.astype(np.uint8), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
-      cnt = max(cnts, key=cv.contourArea)
-
-      # Result
-      BW = np.zeros(Img.shape, np.uint8)
-      cv.drawContours(BW, [cnt], -1, 255, cv.FILLED)
-
-      # --- Compute equivalent ellipse
-
-      E = Ellipse(BW)
-
-      # print(E.__dict__)
-
-      # --- Display -------------------------------------------------------
-
-      # Images
-      norm = cv.normalize(Img, None, 0, 255, norm_type=cv.NORM_MINMAX, dtype=cv.CV_8U)
-      Res = cv.cvtColor(norm, cv.COLOR_GRAY2RGB)
-
-      # Ellipse
-      Res = cv.ellipse(Res, (int(E.x), int(E.y)), (int(E.l), int(E.w)), E.theta*180/np.pi, 0, 360, color=(255,0,255), thickness=1)
-
-      # --- Trace
-
-      trace.append((int(E.x), int(E.y)))
-      while len(trace)>50: trace.pop(0)
-      
-      pts = np.array(trace)
-      Res = cv.polylines(Res, [pts.reshape((-1, 1, 2))], False, color=(0,0,255), thickness=1)
-
-      # Display
-      cv.imshow('frame', Res)
-
-      # cv.waitKey(0)
-      # break
-
-      # Save
-      if record_movie:
-        vfile.write(Res) 
-
-      if cv.waitKey(1) == ord('q'):
-        break
-
-    cap.release()
-    if record_movie:
-      vfile.release()
-
-    cv.destroyAllWindows()
-
   def viewer(self):
 
     cap = cv.VideoCapture(self.file['movie']['path'])
@@ -332,3 +270,163 @@ background:
     while True:
       if cv.waitKey(1) == ord('q'):
         break
+
+  def check_background(self):
+
+    Src = self.background.astype(np.float32)
+    Img = None
+    r = 45
+
+    pt = None
+
+    def click(event, x, y, *args):
+
+      global Img
+
+      if event == cv.EVENT_LBUTTONDOWN: 
+        '''
+        Define region to suppress
+        '''
+        pt = [x, y]
+      
+        # Define mask
+        X, Y = np.meshgrid(np.arange(Src.shape[0]), np.arange(Src.shape[1]))
+        mask = np.uint8((X-pt[0])**2 + (Y-pt[1])**2 <= r**2)
+
+        # New image
+        Img = cv.inpaint(Src, mask, 2, cv.INPAINT_NS)        
+        cv.imshow('frame', Img)
+
+      if event == cv.EVENT_MBUTTONDOWN:
+        '''
+        Save background
+        '''
+
+        np.save(self.file['background'], Img)
+        print('New background saved.')
+
+        self.background = Img
+        
+    # Initial display
+    cv.imshow('frame', Src)
+
+    cv.setMouseCallback('frame', click)
+
+    cv.waitKey(0)
+    cv.destroyAllWindows()
+
+
+  def process(self, Img):
+
+    Tmp = self.background - Img
+
+    _, BW = cv.threshold(Tmp, 0.03, 1, cv.THRESH_BINARY)
+    
+    # --- Find largest object      
+    cnts, _ = cv.findContours(BW.astype(np.uint8), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+    cnt = max(cnts, key=cv.contourArea)
+
+    # Result
+    BW = np.zeros(Img.shape, np.uint8)
+    cv.drawContours(BW, [cnt], -1, 255, cv.FILLED)
+
+    # --- Compute equivalent ellipse
+
+    return Ellipse(BW)
+
+  def run(self, display=True, save_csv=True, moviefile=None):
+    '''
+    Process the movie
+    '''
+
+    # === Preparation ======================================================
+
+    # Input video 
+    cap = cv.VideoCapture(self.file['movie']['path'])
+
+    # Save result
+    if save_csv:
+      Data = []
+
+    # Display
+    if display:
+      trace = []
+
+    # Output video
+    if moviefile is not None:
+      vfile = cv.VideoWriter(moviefile, cv.VideoWriter_fourcc(*'MJPG'), fps=25, frameSize=(self.param['width'], self.param['height'])) 
+
+    # === Processing =======================================================
+
+    with alive_bar(self.param['T']-1) as bar:
+
+      frame = 0
+      t = 0
+
+      bar.title(self.file['movie']['filename'][-14:-4])
+      
+      while cap.isOpened():
+
+        Img = self.get_frame(cap)
+        if Img is None: break
+      
+        # --- Processing ---------------------------------------------------
+
+        E = self.process(Img)
+
+        # --- Save
+
+        Data.append([frame, t, E.x*self.param['pix2mm'], E.y*self.param['pix2mm'], E.theta])
+
+        # --- Display -------------------------------------------------------
+
+        if display:
+
+          # Images
+          norm = cv.normalize(Img, None, 0, 255, norm_type=cv.NORM_MINMAX, dtype=cv.CV_8U)
+          Res = cv.cvtColor(norm, cv.COLOR_GRAY2RGB)
+
+          # Ellipse
+          Res = cv.ellipse(Res, (int(E.x), int(E.y)), (int(E.l), int(E.w)), E.theta*180/np.pi, 0, 360, color=(255,0,255), thickness=1)
+
+          # --- Trace
+
+          trace.append((int(E.x), int(E.y)))
+          while len(trace)>50: trace.pop(0)
+          
+          pts = np.array(trace)
+          Res = cv.polylines(Res, [pts.reshape((-1, 1, 2))], False, color=(0,0,255), thickness=1)
+
+          # Display
+          cv.imshow('frame', Res)
+
+          # Save movie
+          if moviefile:
+            vfile.write(Res) 
+
+          if cv.waitKey(1) == ord('q'):
+            break
+
+        # --- Update
+
+        frame += 1
+        t = frame/self.param['fps']
+        bar()
+
+    #  --- End -------------------------------------------------------------
+
+    cap.release()
+    if moviefile:
+      vfile.release()
+
+    # For snapshots ;-)
+    # cv.waitKey(0)
+
+    cv.destroyAllWindows()
+
+    # --- Save
+
+    if save_csv:
+      
+      df = pd.DataFrame(Data, columns=['frame', 't', 'x', 'y', 'theta'])
+      df.to_csv(self.file['traj'])
