@@ -426,7 +426,7 @@ background:
 
     # --- Save
 
-    if save_csv:
+    if frame==self.param['T'] and save_csv:
       
       df = pd.DataFrame(Data, columns=['frame', 't', 'x', 'y', 'theta'])
       df.to_csv(self.file['traj'])

@@ -6,7 +6,7 @@ os.system('clear')
 
 # === Parameters ===========================================================
 
-movie_file = 'sNPF videos -  Motor activity/14062024/MVI_0012/MVI_0012_3.mp4'
+movie_file = 'sNPF videos -  Motor activity/14062024/MVI_0013/MVI_0013_1.mp4'
 
 # ==========================================================================
 
