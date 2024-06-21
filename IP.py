@@ -294,8 +294,9 @@ background:
         mask = np.uint8((X-pt[0])**2 + (Y-pt[1])**2 <= r**2)
 
         # New image
-        Img = cv.inpaint(Src, mask, 2, cv.INPAINT_NS)        
-        cv.imshow('frame', Img)
+        Img = cv.inpaint(Src, mask, 2, cv.INPAINT_NS)
+        norm = cv.normalize(Img, None, 0, 255, norm_type=cv.NORM_MINMAX, dtype=cv.CV_8U)      
+        cv.imshow('frame', norm)
 
       if event == cv.EVENT_MBUTTONDOWN:
         '''
@@ -308,7 +309,8 @@ background:
         self.background = Img
         
     # Initial display
-    cv.imshow('frame', Src)
+    norm = cv.normalize(Src, None, 0, 255, norm_type=cv.NORM_MINMAX, dtype=cv.CV_8U)
+    cv.imshow('frame', norm)
 
     cv.setMouseCallback('frame', click)
 
@@ -419,14 +421,11 @@ background:
     if moviefile:
       vfile.release()
 
-    # For snapshots ;-)
-    # cv.waitKey(0)
-
     cv.destroyAllWindows()
 
     # --- Save
 
-    if frame==self.param['T'] and save_csv:
+    if frame>=self.param['T']-1 and save_csv:
       
       df = pd.DataFrame(Data, columns=['frame', 't', 'x', 'y', 'theta'])
       df.to_csv(self.file['traj'])
