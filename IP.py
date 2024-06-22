@@ -80,10 +80,11 @@ class Ellipse:
 
 class processor:
 
-  def __init__(self, movie_file, verbose=True):
+  def __init__(self, movie_file, verbose=True, xtype=None):
 
     # --- Definitions
 
+    self.xtype = xtype
     self.verbose = verbose
 
     # --- Settings
@@ -99,11 +100,27 @@ class processor:
     self.file['parameters'] = self.dir + 'parameters.yml'
     if not os.path.exists(self.file['parameters']):
       with open(self.file['parameters'], 'w') as pfile:
-        pfile.write('''ROI: [0, 500, 0, 500]
+
+        match self.xtype:
+
+          case 'x6':
+            pfile.write('''xtype: x6
+ROI: [0, 500, 0, 500]
 pix2mm: 0.20930
 background: 
   method: median
   nFrames: 10''')
+            
+          case 'x4':
+            pfile.write('''xtype: x4
+ROI: [0, 660, 0, 660]
+pix2mm: 0.14634
+background: 
+  method: median
+  nFrames: 10''')
+            
+          case _:
+            print('!! Unable to create parameter file !!')
 
     # Movie
     self.file['movie'] = {}
@@ -275,7 +292,13 @@ background:
 
     Src = self.background.astype(np.float32)
     Img = None
-    r = 45
+
+    # Radius 10mm
+    match self.xtype:
+      case 'x6':
+        r = 10*430/90
+      case 'x4':
+        r = 10*615/90
 
     pt = None
 
@@ -307,6 +330,7 @@ background:
         print('New background saved.')
 
         self.background = Img
+        self.Src = Img
         
     # Initial display
     norm = cv.normalize(Src, None, 0, 255, norm_type=cv.NORM_MINMAX, dtype=cv.CV_8U)
@@ -336,7 +360,7 @@ background:
 
     return Ellipse(BW)
 
-  def run(self, display=True, save_csv=True, moviefile=None):
+  def run(self, display=False, save_csv=True, moviefile=None):
     '''
     Process the movie
     '''

@@ -6,6 +6,7 @@ Avidemux crop parameters
 '''
 
 import os
+import numpy as np
 
 import IP
 
@@ -13,14 +14,19 @@ os.system('clear')
 
 # === Parameters ===========================================================
 
-movie_file = 'sNPF videos -  Motor activity/14062024/MVI_0015/MVI_0015_2.mp4'
-# movie_file = 'sNPF videos -  Motor activity/20062024/C0001/C0001_1.mp4'
+# xtype = 'x6'
+xtype = 'x4'
+
+movie_file = 'sNPF videos -  Motor activity/14062024/MVI_0015/MVI_0015_6.mp4'
+# movie_file = 'sNPF videos -  Motor activity/20062024/C0001/C0001_4.mp4'
 
 # ==========================================================================
 
-P = IP.processor(movie_file)
+P = IP.processor(xtype, movie_file)
 
-# print(P)
+# print(np.max(P.background))
+
+
 
 # P.show(P.background)
 
