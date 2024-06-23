@@ -13,6 +13,8 @@ os.system('clear')
 
 # tfile = project.root + 'Files/' + tag + '/trajectories.csv'
 
+vbin = np.linspace(0, 150, 200)
+
 # ==========================================================================
 
 # Conditions
@@ -22,6 +24,8 @@ l_cond = dataset.groups.keys()
 speed = {}
 
 for cond in l_cond:
+
+  print(cond)
 
   # List of runs
   l_run = dataset.groups[cond]
@@ -51,24 +55,30 @@ for cond in l_cond:
     v = dr/dt
 
     # Storage
-    speed[cond] = np.concatenate(speed[cond], v)
-
-    break
-
-  break
+    speed[cond] = np.concatenate((speed[cond], v))
 
 # === Display ==============================================================
 
 # --- Compute distributions ------------------------------------------------
 
-
-
-# --- Figure ---------------------------------------------------------------
-
 plt.style.use('dark_background')
 fig, ax = plt.subplots()
 
-ax.plot(dr, '.-')
+K = []
+for cond, v in speed.items():
+
+  pdf = stats.gaussian_kde(speed[cond], bw_method=0.01)
+
+  ax.plot(vbin, pdf.evaluate(vbin), '-', label=cond)
+
+  # break
+
+ax.set_yscale('log')
+
+ax.set_xlabel('speed (mm/s)')
+ax.set_ylabel('pdf')
+
+ax.legend()
 
 plt.show()
 
