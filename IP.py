@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import cv2 as cv
 from alive_progress import alive_bar
+import matplotlib.pyplot as plt
 
 import project
 
@@ -78,54 +79,66 @@ class Ellipse:
     #     end
     # end
 
+class handler:
+
+  def __init__(self, stype, btype):
+
+    # --- Data types
+
+    self.btype = btype
+    self.stype = stype
+    self.type = f'{self.stype} {self.btype}'
+
+    # --- Load csv
+
+    self.csv_path = project.root + 'Data/' + f'2024 - sNPF - {self.type}.csv'
+    self.df = pd.read_csv(self.csv_path)
+
 class processor:
 
-  def __init__(self, movie_file, verbose=True, xtype=None):
+  def __init__(self, dtype, movie_code, dish, pix2mm=None, verbose=False):
 
     # --- Definitions
 
-    self.xtype = xtype
+    self.type = dtype
+    self.movie_code = movie_code
+    self.dish = dish
+    self.pix2mm = pix2mm
     self.verbose = verbose
 
     # --- Settings
 
-    self.dir = project.root + 'Files/' + movie_file[:-4] + os.sep
+    self.file = {}
+
+    # Movie
+    self.file['movie'] = {}
+    self.file['movie']['filename'] = f'{self.movie_code}_{dish}.mp4'
+    self.file['movie']['path'] = project.root + f'Data/{self.type}/{self.movie_code}/'+ self.file['movie']['filename']
+
+    # Directory
+    self.dir = project.root + f'Files/{self.type}/{self.movie_code}_{dish}/'
     if not os.path.exists(self.dir):
       os.makedirs(self.dir)
-
-    self.file = {}
 
     # Parameters
     self.param = None
     self.file['parameters'] = self.dir + 'parameters.yml'
     if not os.path.exists(self.file['parameters']):
+
+      # Frame size
+      cap = cv.VideoCapture(self.file['movie']['path'])
+  
+      if cap.isOpened(): 
+        width = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
+
+      # RWU conversion
+      if self.pix2mm is None:
+        self.get_pix2mm(cap)
+
       with open(self.file['parameters'], 'w') as pfile:
 
-        match self.xtype:
-
-          case 'x6':
-            pfile.write('''xtype: x6
-ROI: [0, 500, 0, 500]
-pix2mm: 0.20930
-background: 
-  method: median
-  nFrames: 10''')
-            
-          case 'x4':
-            pfile.write('''xtype: x4
-ROI: [0, 660, 0, 660]
-pix2mm: 0.14634
-background: 
-  method: median
-  nFrames: 10''')
-            
-          case _:
-            print('!! Unable to create parameter file !!')
-
-    # Movie
-    self.file['movie'] = {}
-    self.file['movie']['filename'] = movie_file
-    self.file['movie']['path'] = project.root + 'Data/' + movie_file
+        pfile.write(f'ROI: [0, {width}, 0, {height}]\npix2mm: {self.pix2mm}\nbackground:\n  method: median\n  nFrames: 10')
 
     # Background image
     self.file['background'] = self.dir + 'background.npy'
@@ -199,9 +212,55 @@ background:
     frame = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)/255
 
     # Crop image
-    Img = frame[self.param['ROI'][2]:self.param['ROI'][3], self.param['ROI'][0]:self.param['ROI'][1]]
+    return frame if self.param is None else frame[self.param['ROI'][2]:self.param['ROI'][3], self.param['ROI'][0]:self.param['ROI'][1]]
 
-    return Img
+  def get_pix2mm(self, cap):
+
+    # --- Initial frame    
+    Img = self.get_frame(cap)
+    cap.release()
+
+    self.RWU_pts = []
+
+    def click(event, x, y, flag, self):
+
+      if event == cv.EVENT_LBUTTONDOWN: 
+        '''
+        Define point
+        '''
+
+        # Store points
+        self.RWU_pts.append([x, y])
+
+        if len(self.RWU_pts)==3:
+      
+          # Get points
+          x1 = self.RWU_pts[0][0]
+          x2 = self.RWU_pts[1][0]
+          x3 = self.RWU_pts[2][0]
+          y1 = self.RWU_pts[0][1]
+          y2 = self.RWU_pts[1][1]
+          y3 = self.RWU_pts[2][1]
+
+          # Circle radius
+          a = np.sqrt((x2-x3)**2 + (y2-y3)**2)
+          b = np.sqrt((x1-x3)**2 + (y1-y3)**2)
+          c = np.sqrt((x1-x2)**2 + (y1-y2)**2)
+          s = (a+b+c)/2
+          A = np.sqrt(s*(s-a)*(s-b)*(s-c))
+          r = a*b*c/4/A
+
+          # pix2mm coefficient (90mm Petri dishes)
+          self.pix2mm = 45/r
+
+          print(f'RWU conversion coefficient: {self.pix2mm}')
+
+    # --- Display
+    cv.imshow('frame', Img*2)
+    cv.setMouseCallback('frame', click, self)
+
+    cv.waitKey(0)
+    cv.destroyAllWindows()
 
   def define_background(self):
 
@@ -265,11 +324,85 @@ background:
       if self.verbose:
         print('{:.2f} sec'.format(time.time() - tref))
 
+  def check_background(self):
+
+    Src = self.background.astype(np.float32)
+    Img = None
+
+    # Radius 10mm
+    r = 10/self.pix2mm
+
+    pt = None
+
+    def click(event, x, y, *args):
+
+      global Img
+
+      if event == cv.EVENT_LBUTTONDOWN: 
+        '''
+        Define region to suppress
+        '''
+        pt = [x, y]
+      
+        # Define mask
+        X, Y = np.meshgrid(np.arange(Src.shape[1]), np.arange(Src.shape[0]))
+        mask = np.uint8((X-pt[0])**2 + (Y-pt[1])**2 <= r**2)
+
+        # New image
+        Img = cv.inpaint(Src, mask, 2, cv.INPAINT_NS)
+
+        # norm = cv.normalize(Img, None, 0, 255, norm_type=cv.NORM_MINMAX, dtype=cv.CV_8U)
+        norm = Img/np.mean(Img)/2
+
+        cv.imshow('frame', norm)
+
+      if event == cv.EVENT_MBUTTONDOWN:
+        '''
+        Save background
+        '''
+
+        np.save(self.file['background'], Img)
+        print('New background saved.')
+
+        self.background = Img
+        self.Src = Img
+        
+    # Initial display
+    # norm = cv.normalize(Src, None, 0, 255, norm_type=cv.NORM_MINMAX, dtype=cv.CV_8U)
+    norm = Src/np.mean(Src)/2
+    cv.imshow('frame', norm)
+
+    cv.setMouseCallback('frame', click)
+
+    cv.waitKey(0)
+    cv.destroyAllWindows()
+
   def show(self, Img):
 
     cv.imshow('frame', Img)
     cv.waitKey(0)
     cv.destroyAllWindows()
+
+  def display_traj(self):
+
+    # Background
+    Bkg = self.background/np.mean(self.background)/2
+
+    # Trajectory
+    df = pd.read_csv(self.file['traj'])
+
+    # plt.style.use('dark_background')
+    plt.rcParams.update({'font.size': 22})
+    ax = plt.axes(projection='3d')
+
+    # ax.imshow(Bkg)
+    ax.plot3D(df.x, df.y, df.t, '-')
+
+    ax.set_xlabel('x (mm)')
+    ax.set_ylabel('y (mm)')
+    ax.set_zlabel('t (s)')
+
+    plt.show()
 
   def viewer(self):
 
@@ -288,60 +421,6 @@ background:
       if cv.waitKey(1) == ord('q'):
         break
 
-  def check_background(self):
-
-    Src = self.background.astype(np.float32)
-    Img = None
-
-    # Radius 10mm
-    match self.xtype:
-      case 'x6':
-        r = 10*430/90
-      case 'x4':
-        r = 10*615/90
-
-    pt = None
-
-    def click(event, x, y, *args):
-
-      global Img
-
-      if event == cv.EVENT_LBUTTONDOWN: 
-        '''
-        Define region to suppress
-        '''
-        pt = [x, y]
-      
-        # Define mask
-        X, Y = np.meshgrid(np.arange(Src.shape[0]), np.arange(Src.shape[1]))
-        mask = np.uint8((X-pt[0])**2 + (Y-pt[1])**2 <= r**2)
-
-        # New image
-        Img = cv.inpaint(Src, mask, 2, cv.INPAINT_NS)
-        norm = cv.normalize(Img, None, 0, 255, norm_type=cv.NORM_MINMAX, dtype=cv.CV_8U)      
-        cv.imshow('frame', norm)
-
-      if event == cv.EVENT_MBUTTONDOWN:
-        '''
-        Save background
-        '''
-
-        np.save(self.file['background'], Img)
-        print('New background saved.')
-
-        self.background = Img
-        self.Src = Img
-        
-    # Initial display
-    norm = cv.normalize(Src, None, 0, 255, norm_type=cv.NORM_MINMAX, dtype=cv.CV_8U)
-    cv.imshow('frame', norm)
-
-    cv.setMouseCallback('frame', click)
-
-    cv.waitKey(0)
-    cv.destroyAllWindows()
-
-
   def process(self, Img):
 
     Tmp = self.background - Img
@@ -350,6 +429,7 @@ background:
     
     # --- Find largest object      
     cnts, _ = cv.findContours(BW.astype(np.uint8), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+    if not len(cnts): return None
     cnt = max(cnts, key=cv.contourArea)
 
     # Result
@@ -388,6 +468,8 @@ background:
 
       frame = 0
       t = 0
+      id = 0
+      Eref = None
 
       bar.title(self.file['movie']['filename'][-14:-4])
       
@@ -400,9 +482,14 @@ background:
 
         E = self.process(Img)
 
+        if E is None:
+          E = Eref
+        else:
+          Eref = E
+
         # --- Save
 
-        Data.append([frame, t, E.x*self.param['pix2mm'], E.y*self.param['pix2mm'], E.theta])
+        Data.append([id, frame, t, E.x*self.param['pix2mm'], E.y*self.param['pix2mm'], E.theta])
 
         # --- Display -------------------------------------------------------
 
@@ -449,7 +536,7 @@ background:
 
     # --- Save
 
-    if frame>=self.param['T']-1 and save_csv:
+    if frame>=self.param['T']-2 and save_csv:
       
-      df = pd.DataFrame(Data, columns=['frame', 't', 'x', 'y', 'theta'])
+      df = pd.DataFrame(Data, columns=['id', 'frame', 't', 'x', 'y', 'theta'])
       df.to_csv(self.file['traj'])

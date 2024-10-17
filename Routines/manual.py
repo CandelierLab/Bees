@@ -1,8 +1,9 @@
 '''
-IP routine
+Manual IP
 '''
 
 import os
+
 import IP
 
 os.system('clear')
@@ -12,22 +13,32 @@ os.system('clear')
 stype = 'Single'      # 'Single' / 'Social'
 btype = 'foragers'    # 'foragers' / 'nurses'
 
+movie_code = 'MVI_0038'
+dish = 1
+
 # ==========================================================================
 
 # Data handler
 
 H = IP.handler(stype, btype)
 
-row = H.df.iloc[0]
+P = IP.processor(H.type, movie_code, dish)
 
-print(row)
-movie_code = row['video code']
-dish = row['petri dish place']
-pix2mm = row['pix2mm']
+# P.get_pix2mm()
+# print(P)
 
-P = IP.processor(H.type, movie_code, dish, pix2mm=pix2mm)
 
-P.run(display=True)
+# P.check_background()
+
+# print(np.max(P.background))
+
+
+
+# P.show(P.background*2)
+
+P.viewer()
+
+# P.run(display=True, moviefile='/home/raphael/Science/Projects/Misc/Bees/Movies/test.mp4')
 
 # if not os.path.exists(P.file['traj']):
 

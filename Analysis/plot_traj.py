@@ -2,26 +2,34 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import project
+
+import IP
 
 os.system('clear')
 
 # === Parameters ===========================================================
 
-tag = 'sNPF videos -  Motor activity/14062024/MVI_0012/MVI_0012_2'
+stype = 'Single'      # 'Single' / 'Social'
+btype = 'foragers'    # 'foragers' / 'nurses'
 
-# --------------------------------------------------------------------------
-
-tfile = project.root + 'Files/' + tag + '/trajectories.csv'
+movie_code = 'MVI_0038'
+dish = 1
 
 # ==========================================================================
 
-df = pd.read_csv(tfile)
+# Data handler
+
+H = IP.handler(stype, btype)
+
+P = IP.processor(H.type, movie_code, dish)
+
+P.display_traj()
+
 
 # plt.style.use('dark_background')
-ax = plt.axes(projection='3d')
+# ax = plt.axes(projection='3d')
 
-ax.plot3D(df.x, df.y, df.t, '-')
+# ax.plot3D(df.x, df.y, df.t, '-')
 
-plt.show()
+# plt.show()
 

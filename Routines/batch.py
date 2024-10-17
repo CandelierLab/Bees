@@ -1,24 +1,33 @@
 '''
-
-Avidemux crop parameters
-6x: 1420 - 580  (500x500 pix)
-4x: 3180 - 1500 (660x660 pix)
+Batch run on a whole condition
 '''
 
-import os
 
-import Analysis.Dataset.motor_activity_1B as Data
+import os
 import IP
 
 os.system('clear')
 
-for cond, l_run in Data.groups.items():
+# === Parameters ===========================================================
 
-  for run in l_run:
+stype = 'Single'      # 'Single' / 'Social'
+btype = 'foragers'      # 'foragers' / 'nurses'
 
-    print(run)
-    P = IP.processor(Data.prefix + run + '.mp4', verbose=False)
+# ==========================================================================
 
-    if not os.path.exists(P.file['traj']):
-      P.run(display=True)
+# Data handler
 
+H = IP.handler(stype, btype)
+
+for index, row in H.df.iterrows():
+
+  movie_code = row['video code']
+  dish = row['petri dish place']
+
+  P = IP.processor(H.type, movie_code, dish)
+
+  # P.check_background()
+
+  if not os.path.exists(P.file['traj']):
+
+    P.run(display=False)
