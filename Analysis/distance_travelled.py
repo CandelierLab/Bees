@@ -13,10 +13,9 @@ os.system('clear')
 # === Parameters ===========================================================
 
 stype = 'Single'      # 'Single' / 'Social'
-btype = 'nurses'      # 'foragers' / 'nurses'
+btype = 'foragers'      # 'foragers' / 'nurses'
 
-tau = 1
-vbin = np.linspace(0, 100, 200)
+th_dr = 1
 
 # ==========================================================================
 
@@ -27,15 +26,15 @@ H = IP.handler(stype, btype)
 l_cond = H.df['bee group'].unique()
 
 # Containers
-speed = {}
+dist = []
 
-for cond in l_cond:
+for k, cond in enumerate(l_cond):
 
   # List of runs
   df = H.df[H.df['bee group']==cond]
   
   # Speed container
-  speed[cond] = np.empty(0)
+  dist.append([])
 
   with alive_bar(df.shape[0]) as bar:
 
@@ -62,23 +61,28 @@ for cond in l_cond:
       # -- Compute and store speed
 
       # Computation
-      x = df.x.to_numpy()
-      y = df.y.to_numpy()
-      t = df.t.to_numpy()
+      X = df.x.to_numpy()
+      Y = df.y.to_numpy()
+      T = df.t.to_numpy()
 
       # Filtering
-      x_ = savgol_filter(x, 51, 3)
-      y_ = savgol_filter(y, 51, 3)
+      x = savgol_filter(X, 51, 3)
+      y = savgol_filter(Y, 51, 3)
 
-      dx = x_[tau:] - x_[0:-tau]
-      dy = y_[tau:] - y_[0:-tau]
-      dr = np.sqrt(dx**2 + dy**2)
-      dt = t[tau:] - t[0:-tau]
+      iref = 0
+      D = 0
+      for i, t in enumerate(T):
 
-      v = dr/dt
+        # Distance to reference
+        dr2 = (x[i]-x[iref])**2 + (y[i]-y[iref])**2
+
+        # Update
+        if dr2 >= th_dr or i==T.size-1:
+          D += np.sqrt(dr2)
+          iref = i
 
       # Storage
-      speed[cond] = np.concatenate((speed[cond], v))
+      dist[k].append(np.log10(D))
 
       bar()
 
@@ -89,24 +93,20 @@ for cond in l_cond:
 # plt.style.use('dark_background')
 plt.rcParams.update({'font.size': 30})
 
-fig, ax = plt.subplots()
+fig, ax = plt.subplots(1,1, figsize=(20,20))
 
-K = []
-for cond, v in speed.items():
+ax.violinplot(dist, showmeans=True)
 
-  pdf = stats.gaussian_kde(speed[cond], bw_method=0.01)
+for k, cond in enumerate(l_cond):
+  n = len(dist[k])
+  x = (k+1)*np.ones(n) + 0.02*np.random.randn(n)
+  ax.scatter(x, dist[k])
 
-  ax.plot(vbin, pdf.evaluate(vbin), '-', label=cond)
+ax.set_xticks([y + 1 for y in range(len(l_cond))],
+                  labels=l_cond)
 
-  # break
-
-ax.set_ylim(1e-4, 1)
-
-ax.set_yscale('log')
-ax.set_xlabel('speed (mm/s)')
-ax.set_ylabel('pdf')
-
-ax.legend()
+ax.set_ylabel('Distance travelled $log_{10}(d)$  (mm)')
+ax.set_title(H.type)
 
 plt.show()
 
