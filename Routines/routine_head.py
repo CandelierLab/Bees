@@ -18,7 +18,7 @@ os.system('clear')
 stype = 'Single'      # 'Single' / 'Social'
 btype = 'foragers'    # 'foragers' / 'nurses'
 
-bsize = 100
+bsize = 250
 
 # ==========================================================================
 
@@ -26,7 +26,7 @@ bsize = 100
 
 H = IP.handler(stype, btype)
 
-row = H.df.iloc[0]
+row = H.df.iloc[103]
 
 print(row)
 movie_code = row['video code']
@@ -78,20 +78,17 @@ with alive_bar(P.param['T']-1) as bar:
     # --- Display -------------------------------------------------------
     
     # Determine head
-    # # # b2 = int(bsize/2)
-    # # # R0 = np.sum(Res[0:b2, :])
-    # # # R1 = np.sum(Res[b2:,:])
-    # # # if R0<R1:
-    # # #   Res = np.flip(Res, axis=0)
+    if np.argmax(np.sum(Res, axis=1))>bsize/2:
+      Res = np.flip(Res, axis=0)
 
-    if frame==0:
-      ax.imshow(Res, cmap='gray', vmax=0.1)
-      # ax.imshow(np.log(Res), cmap='gray')
-      plt.show()
-      break
+    # if frame==0:
+    #   # ax.imshow(Res, cmap='gray', vmax=0.1)
+    #   ax.plot(np.sum(Res, axis=1), '.-')
+    #   plt.show()
+    #   break
 
     # Upscale
-    Res = cv.resize(Res, (500,500), interpolation=cv.INTER_LINEAR)
+    Res = cv.resize(Res, (500,500), interpolation=cv.INTER_LINEAR)*4
 
     # Display
     cv.imshow('frame', Res)
