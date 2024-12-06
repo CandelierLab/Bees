@@ -46,6 +46,12 @@ plt.style.use('dark_background')
 plt.rcParams.update({'font.size': 22})
 fig, ax = plt.subplots(1,1, figsize=(20,20))
 
+theta = np.unwrap(2*df.theta)/2
+
+# # # ax.plot(theta, '.-')
+
+# # # plt.show()
+
 # Input video 
 cap = cv.VideoCapture(P.file['movie']['path'])
 
@@ -68,7 +74,8 @@ with alive_bar(P.param['T']-1) as bar:
     dx = df.x[frame]/P.param['pix2mm']
     dy = df.y[frame]/P.param['pix2mm']
     
-    M = cv.getRotationMatrix2D((dx, dy), df.theta[frame]*180/np.pi+90, 1)
+    # M = cv.getRotationMatrix2D((dx, dy), df.theta[frame]*180/np.pi+90, 1)
+    M = cv.getRotationMatrix2D((dx, dy), theta[frame]*180/np.pi+90, 1)
     M[0,2] += bsize/2 - dx
     M[1,2] += bsize/2 - dy
 
@@ -78,8 +85,8 @@ with alive_bar(P.param['T']-1) as bar:
     # --- Display -------------------------------------------------------
     
     # Determine head
-    if np.argmax(np.sum(Res, axis=1))>bsize/2:
-      Res = np.flip(Res, axis=0)
+    # if np.argmax(np.sum(Res, axis=1))>bsize/2:
+    Res = np.flip(Res, axis=0)
 
     # if frame==0:
     #   # ax.imshow(Res, cmap='gray', vmax=0.1)
@@ -91,7 +98,7 @@ with alive_bar(P.param['T']-1) as bar:
     Res = cv.resize(Res, (500,500), interpolation=cv.INTER_LINEAR)*4
 
     # Display
-    cv.imshow('frame', Res)
+    cv.imshow('frame', 1-Res)
 
     if cv.waitKey(1) == ord('q'):
       break
