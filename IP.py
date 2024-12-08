@@ -253,7 +253,7 @@ class processor:
           # pix2mm coefficient (90mm Petri dishes)
           self.pix2mm = 45/r
 
-          print(f'RWU conversion coefficient: {self.pix2mm}')
+          print(f'{self.movie_code}_{self.dish} | RWU conversion coefficient: {self.pix2mm}')
 
     # --- Display
     cv.imshow('frame', Img*2)
@@ -338,6 +338,8 @@ class processor:
 
       global Img
 
+      Src = self.background.astype(np.float32)
+
       if event == cv.EVENT_LBUTTONDOWN: 
         '''
         Define region to suppress
@@ -362,10 +364,10 @@ class processor:
         '''
 
         np.save(self.file['background'], Img)
-        print('New background saved.')
+        print(f'{self.movie_code}_{self.dish} | New background saved.')
 
         self.background = Img
-        self.Src = Img
+        Src = Img
         
     # Initial display
     # norm = cv.normalize(Src, None, 0, 255, norm_type=cv.NORM_MINMAX, dtype=cv.CV_8U)
