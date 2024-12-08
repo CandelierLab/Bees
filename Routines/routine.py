@@ -22,6 +22,7 @@ row = H.df.iloc[0]
 # row = H.df.loc[H.df['video code'] == 'MVI_0072'].iloc[0]
 
 print(row)
+print ('-'*25)
 movie_code = row['video code']
 dish = row['petri dish place']
 
@@ -32,6 +33,6 @@ P = IP.processor(H.type, movie_code, dish, pix2mm=pix2mm)
 
 if not os.path.exists(P.file['traj']):
 
-  P.check_background()
+  # P.check_background()
 
-  # P.run(display=True)
+  P.run(display=True, save_csv=False)

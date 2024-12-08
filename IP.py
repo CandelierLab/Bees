@@ -423,31 +423,54 @@ class processor:
       if cv.waitKey(1) == ord('q'):
         break
 
-  def process(self, Img):
+  def process(self, Img, kind='Single'):
 
     Tmp = self.background - Img
 
     _, BW = cv.threshold(Tmp, 0.03, 1, cv.THRESH_BINARY)
     
-    # --- Find largest object      
-    cnts, _ = cv.findContours(BW.astype(np.uint8), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
-    if not len(cnts): return None
-    cnt = max(cnts, key=cv.contourArea)
+    match kind:
 
-    # Result
-    BW = np.zeros(Img.shape, np.uint8)
-    cv.drawContours(BW, [cnt], -1, 255, cv.FILLED)
+      case 'Single':
 
-    # --- Compute equivalent ellipse
+        # --- Find largest object      
+        cnts, _ = cv.findContours(BW.astype(np.uint8), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+        if not len(cnts): return None
+        cnt = max(cnts, key=cv.contourArea)
 
-    return Ellipse(BW)
+        # Result
+        BW = np.zeros(Img.shape, np.uint8)
+        cv.drawContours(BW, [cnt], -1, 255, cv.FILLED)
 
-  def run(self, display=False, save_csv=True, moviefile=None):
+        # --- Compute equivalent ellipse
+
+        return Ellipse(BW)
+      
+      case 'Social':
+
+        # --- Find largest object      
+        cnts, _ = cv.findContours(BW.astype(np.uint8), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+        if not len(cnts): return None
+        cnt = max(cnts, key=cv.contourArea)
+
+        # Result
+        BW = np.zeros(Img.shape, np.uint8)
+        cv.drawContours(BW, [cnt], -1, 255, cv.FILLED)
+
+        # --- Compute equivalent ellipse
+
+        return Ellipse(BW)
+
+  def run(self, kind=None, display=False, save_csv=True, moviefile=None):
     '''
     Process the movie
     '''
 
     # === Preparation ======================================================
+
+    if kind is None:
+      if 'Single' in self.type: kind = 'Single'
+      if 'Social' in self.type: kind = 'Social'
 
     # Input video 
     cap = cv.VideoCapture(self.file['movie']['path'])
@@ -482,7 +505,7 @@ class processor:
       
         # --- Processing ---------------------------------------------------
 
-        E = self.process(Img)
+        E = self.process(Img, kind=kind)
 
         if E is None:
           E = Eref
@@ -491,7 +514,8 @@ class processor:
 
         # --- Save
 
-        Data.append([id, frame, t, E.x*self.param['pix2mm'], E.y*self.param['pix2mm'], E.theta])
+        if save_csv:
+          Data.append([id, frame, t, E.x*self.param['pix2mm'], E.y*self.param['pix2mm'], E.theta])
 
         # --- Display -------------------------------------------------------
 

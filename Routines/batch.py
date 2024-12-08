@@ -16,7 +16,6 @@ btype = 'nurses'      # 'foragers' / 'nurses'
 # ==========================================================================
 
 # Data handler
-
 H = IP.handler(stype, btype)
 
 for index, row in H.df.iterrows():
