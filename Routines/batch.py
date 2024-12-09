@@ -10,13 +10,12 @@ os.system('clear')
 
 # === Parameters ===========================================================
 
-stype = 'Single'      # 'Single' / 'Social'
-btype = 'foragers'      # 'foragers' / 'nurses'
+stype = 'Social'      # 'Single' / 'Social'
+btype = 'nurses'      # 'foragers' / 'nurses'
 
 # ==========================================================================
 
 # Data handler
-
 H = IP.handler(stype, btype)
 
 for index, row in H.df.iterrows():
@@ -24,10 +23,18 @@ for index, row in H.df.iterrows():
   movie_code = row['video code']
   dish = row['petri dish place']
 
-  P = IP.processor(H.type, movie_code, dish)
+  if movie_code=='MVI_0062': 
+    continue
 
-  # P.check_background()
+  print(movie_code, dish)
 
-  if not os.path.exists(P.file['traj']):
+  pix2mm = row['pix2mm']
+  P = IP.processor(H.type, movie_code, dish, pix2mm=pix2mm)
 
-    P.run(display=False)
+  # P = IP.processor(H.type, movie_code, dish)
+
+  # Background extraction
+  P.check_background()
+
+  # if not os.path.exists(P.file['traj']):
+  #   P.run(display=False)
