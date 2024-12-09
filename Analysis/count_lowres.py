@@ -9,8 +9,8 @@ os.system('clear')
 
 # === Parameters ===========================================================
 
-stype = 'Single'      # 'Single' / 'Social'
-btype = 'nurses'    # 'foragers' / 'nurses'
+stype = 'Social'      # 'Single' / 'Social'
+btype = 'foragers'    # 'foragers' / 'nurses'
 
 # Resolution threshold
 th_res = 0.125

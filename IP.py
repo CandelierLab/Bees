@@ -103,8 +103,9 @@ class processor:
     self.type = dtype
     self.movie_code = movie_code
     self.dish = dish
-    self.pix2mm = pix2mm
     self.verbose = verbose
+
+    self.th_area = None
 
     # --- Settings
 
@@ -133,12 +134,12 @@ class processor:
         height = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
 
       # RWU conversion
-      if self.pix2mm is None:
+      if pix2mm is None:
         self.get_pix2mm(cap)
 
       with open(self.file['parameters'], 'w') as pfile:
 
-        pfile.write(f'ROI: [0, {width}, 0, {height}]\npix2mm: {self.pix2mm}\nbackground:\n  method: median\n  nFrames: 10')
+        pfile.write(f'ROI: [0, {width}, 0, {height}]\npix2mm: {pix2mm}\nbackground:\n  method: median\n  nFrames: 10')
 
     # Background image
     self.file['background'] = self.dir + 'background.npy'
@@ -330,7 +331,7 @@ class processor:
     Img = None
 
     # Radius 10mm
-    r = 10/self.pix2mm
+    r = 10/self.param['pix2mm']
 
     pt = None
 
@@ -423,11 +424,13 @@ class processor:
       if cv.waitKey(1) == ord('q'):
         break
 
+  # ========================================================================
   def process(self, Img, kind='Single'):
 
     Tmp = self.background - Img
 
     _, BW = cv.threshold(Tmp, 0.03, 1, cv.THRESH_BINARY)
+    self.BW = BW
     
     match kind:
 
@@ -435,7 +438,7 @@ class processor:
 
         # --- Find largest object      
         cnts, _ = cv.findContours(BW.astype(np.uint8), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
-        if not len(cnts): return None
+        if not len(cnts): return [None]
         cnt = max(cnts, key=cv.contourArea)
 
         # Result
@@ -444,29 +447,49 @@ class processor:
 
         # --- Compute equivalent ellipse
 
-        return Ellipse(BW)
+        return [Ellipse(BW)]
       
       case 'Social':
 
-        # --- Find largest object      
+        # --- Sort objects by area
+
         cnts, _ = cv.findContours(BW.astype(np.uint8), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
-        if not len(cnts): return None
-        cnt = max(cnts, key=cv.contourArea)
+        if not len(cnts): return [None, None]
 
-        # Result
-        BW = np.zeros(Img.shape, np.uint8)
-        cv.drawContours(BW, [cnt], -1, 255, cv.FILLED)
+        cnts = sorted(cnts, key=cv.contourArea, reverse=True)
 
-        # --- Compute equivalent ellipse
+        # Initialization of the area threshold
+        if self.th_area is None and len(cnts)>1:
+          self.th_area = (cv.contourArea(cnts[0]) + cv.contourArea(cnts[1]))/4
 
-        return Ellipse(BW)
+        # --- First ellipse
 
+        if len(cnts)==0 or (self.th_area is not None and cv.contourArea(cnts[0])<self.th_area):
+          return []
+        else:
+          BW = np.zeros(Img.shape, np.uint8)
+          cv.drawContours(BW, [cnts[0]], -1, 255, cv.FILLED)
+          E1 = Ellipse(BW)          
+
+        # --- Second ellipse
+
+        if len(cnts)<2 or cv.contourArea(cnts[1])<self.th_area:
+          return [E1]
+
+        else:
+          BW = np.zeros(Img.shape, np.uint8)
+          cv.drawContours(BW, [cnts[1]], -1, 255, cv.FILLED)
+          E2 = Ellipse(BW)
+
+        return [E1, E2]
+
+  # ========================================================================
   def run(self, kind=None, display=False, save_csv=True, moviefile=None):
     '''
     Process the movie
     '''
 
-    # === Preparation ======================================================
+    # --- Preparation ------------------------------------------------------
 
     if kind is None:
       if 'Single' in self.type: kind = 'Single'
@@ -479,22 +502,19 @@ class processor:
     if save_csv:
       Data = []
 
-    # Display
-    if display:
-      trace = []
-
     # Output video
     if moviefile is not None:
       vfile = cv.VideoWriter(moviefile, cv.VideoWriter_fourcc(*'MJPG'), fps=25, frameSize=(self.param['width'], self.param['height'])) 
 
-    # === Processing =======================================================
+    # --- Processing -------------------------------------------------------
 
     with alive_bar(self.param['T']-1) as bar:
 
       frame = 0
       t = 0
-      id = 0
       Eref = None
+      bmerge = None
+      traces = [[]] if kind=='Single' else [[], []]
 
       bar.title(self.file['movie']['filename'][-14:-4])
       
@@ -507,15 +527,72 @@ class processor:
 
         E = self.process(Img, kind=kind)
 
-        if E is None:
-          E = Eref
-        else:
-          Eref = E
+        match kind:
 
-        # --- Save
+          case 'Single':
 
-        if save_csv:
-          Data.append([id, frame, t, E.x*self.param['pix2mm'], E.y*self.param['pix2mm'], E.theta])
+            # --- Miss: use reference
+
+            if E[0] is None:
+              E = Eref
+            else:
+              Eref = E
+
+            # --- Save
+
+            if save_csv:
+              Data.append([0, frame, t, E[0].x*self.param['pix2mm'], E[0].y*self.param['pix2mm'], E[0].theta, E[0].m00])
+
+          case 'Social':
+
+            if Eref is not None:
+
+              match len(E):
+
+                case 0:
+                  E = Eref
+                  bmerge = True if len(E)==1 else False
+
+                case 1:
+
+                  bmerge = True
+
+                case 2:
+
+                  bmerge = False
+
+                  # --- Check inversions
+
+                  if Eref is not None and len(Eref)>1:
+
+                    # Squared distances to the references
+                    d00 = (E[0].x-Eref[0].x)**2 + (E[0].y-Eref[0].y)**2
+                    d01 = (E[0].x-Eref[1].x)**2 + (E[0].y-Eref[1].y)**2
+                    d10 = (E[1].x-Eref[0].x)**2 + (E[1].y-Eref[0].y)**2
+                    d11 = (E[1].x-Eref[1].x)**2 + (E[1].y-Eref[1].y)**2
+
+                    if d00+d11 > d01+d10: E = [E[1], E[0]]
+
+            # --- Reference update
+
+            Eref = E
+
+            # --- Save
+
+            if save_csv:
+              
+              Data.append([0, frame, t,
+                            E[0].x*self.param['pix2mm'], 
+                            E[0].y*self.param['pix2mm'], 
+                            E[0].theta, 
+                            E[0].m00])
+              
+              if not bmerge and len(E)>1:
+                Data.append([1, frame, t,
+                             E[1].x*self.param['pix2mm'], 
+                             E[1].y*self.param['pix2mm'], 
+                             E[1].theta,
+                             E[1].m00])
 
         # --- Display -------------------------------------------------------
 
@@ -525,16 +602,29 @@ class processor:
           norm = cv.normalize(Img, None, 0, 255, norm_type=cv.NORM_MINMAX, dtype=cv.CV_8U)
           Res = cv.cvtColor(norm, cv.COLOR_GRAY2RGB)
 
-          # Ellipse
-          Res = cv.ellipse(Res, (int(E.x), int(E.y)), (int(E.l), int(E.w)), E.theta*180/np.pi, 0, 360, color=(255,0,255), thickness=1)
+          # Display BW images (instead of grayscale)
+          # Res = cv.cvtColor(self.BW.astype(np.float32), cv.COLOR_GRAY2RGB)
 
-          # --- Trace
+          # --- Ellipses & traces
 
-          trace.append((int(E.x), int(E.y)))
-          while len(trace)>50: trace.pop(0)
-          
-          pts = np.array(trace)
-          Res = cv.polylines(Res, [pts.reshape((-1, 1, 2))], False, color=(0,0,255), thickness=1)
+          # Reset traces
+          if len(E)!=len(traces):
+            traces = [[]] if bmerge else [[], []]
+
+          for i in range(len(E)):
+
+            if bmerge: color = (0,255,255)
+            elif i: color = (255,255,0)
+            else: color = (255,0,255)
+
+            # Ellipse
+            Res = cv.ellipse(Res, (int(E[i].x), int(E[i].y)), (int(E[i].l), int(E[i].w)), E[i].theta*180/np.pi, 0, 360, color=color, thickness=1)
+
+            # Trace
+            traces[i].append((int(E[i].x), int(E[i].y)))
+            while len(traces[i])>50: traces[i].pop(0)
+            
+            Res = cv.polylines(Res, [np.array(traces[i]).reshape((-1, 1, 2))], False, color=color, thickness=1)
 
           # Display
           cv.imshow('frame', Res)
@@ -564,5 +654,5 @@ class processor:
 
     if frame>=self.param['T']-2 and save_csv:
       
-      df = pd.DataFrame(Data, columns=['id', 'frame', 't', 'x', 'y', 'theta'])
+      df = pd.DataFrame(Data, columns=['id', 'frame', 't', 'x', 'y', 'theta', 'area'])
       df.to_csv(self.file['traj'])
