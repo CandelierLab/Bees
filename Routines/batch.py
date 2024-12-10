@@ -10,7 +10,7 @@ os.system('clear')
 # === Parameters ===========================================================
 
 stype = 'Social'      # 'Single' / 'Social'
-btype = 'foragers'    # 'foragers' / 'nurses'
+btype = 'nurses'    # 'foragers' / 'nurses'
 
 # ==========================================================================
 
