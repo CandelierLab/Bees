@@ -13,7 +13,7 @@ os.system('clear')
 # === Parameters ===========================================================
 
 stype = 'Single'      # 'Single' / 'Social'
-btype = 'foragers'      # 'foragers' / 'nurses'
+btype = 'nurses'      # 'foragers' / 'nurses'
 
 th_dr = 1
 
@@ -26,7 +26,7 @@ H = IP.handler(stype, btype)
 l_cond = H.df['bee group'].unique()
 
 # Containers
-dist = []
+speed = []
 
 for k, cond in enumerate(l_cond):
 
@@ -34,7 +34,7 @@ for k, cond in enumerate(l_cond):
   df = H.df[H.df['bee group']==cond]
   
   # Speed container
-  dist.append([])
+  speed.append([])
 
   with alive_bar(df.shape[0]) as bar:
 
@@ -82,7 +82,7 @@ for k, cond in enumerate(l_cond):
           iref = i
 
       # Storage
-      dist[k].append(np.log10(D))
+      speed[k].append(np.log10(D/max(T)))
 
       bar()
 
@@ -95,17 +95,17 @@ plt.rcParams.update({'font.size': 30})
 
 fig, ax = plt.subplots(1,1, figsize=(20,20))
 
-ax.violinplot(dist, showmeans=True)
+ax.violinplot(speed, showmeans=True)
 
 for k, cond in enumerate(l_cond):
-  n = len(dist[k])
+  n = len(speed[k])
   x = (k+1)*np.ones(n) + 0.02*np.random.randn(n)
-  ax.scatter(x, dist[k])
+  ax.scatter(x, speed[k])
 
 ax.set_xticks([y + 1 for y in range(len(l_cond))],
                   labels=l_cond)
 
-ax.set_ylabel('Distance travelled $log_{10}(d)$  (mm)')
+ax.set_ylabel('Speed $log_{10}(v)$  (mm/s)')
 ax.set_title(H.type)
 
 plt.show()
