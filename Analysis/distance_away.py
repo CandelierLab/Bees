@@ -13,7 +13,7 @@ os.system('clear')
 # === Parameters ===========================================================
 
 stype = 'Social'        # 'Single' / 'Social'
-btype = 'nurses'      # 'foragers' / 'nurses'
+btype = 'foragers'      # 'foragers' / 'nurses'
 
 th_dr = 1
 
@@ -113,6 +113,13 @@ for k, cond in enumerate(l_cond):
 
   md[i,j] = np.mean(dist[k])
   md[j,i] = np.mean(dist[k])
+
+# === Print ================================================================
+
+# for k, cond in enumerate(l_cond):
+#   print(cond)
+#   for p in dist[k]:
+#     print(float(p))
 
 # === Display ==============================================================
 

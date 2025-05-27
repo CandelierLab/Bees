@@ -104,6 +104,13 @@ for k, cond in enumerate(l_cond):
   mpt[i,j] = np.mean(Pt[k])
   mpt[j,i] = np.mean(Pt[k])
 
+# # === Print ================================================================
+
+# for k, cond in enumerate(l_cond):
+#   print(cond)
+#   for p in Pt[k]:
+#     print(float(p))
+
 # === Display ==============================================================
 
 # plt.style.use('dark_background')
@@ -143,7 +150,6 @@ match plot:
     fig.colorbar(ms, ax=ax)
 
     ax.set_title(H.type, y=1.1)
-
 
 plt.show()
 

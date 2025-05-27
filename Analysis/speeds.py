@@ -13,7 +13,7 @@ os.system('clear')
 # === Parameters ===========================================================
 
 stype = 'Single'      # 'Single' / 'Social'
-btype = 'nurses'      # 'foragers' / 'nurses'
+btype = 'foragers'      # 'foragers' / 'nurses'
 
 th_dr = 1
 
@@ -85,6 +85,14 @@ for k, cond in enumerate(l_cond):
       speed[k].append(np.log10(D/max(T)))
 
       bar()
+
+# # === Print ================================================================
+
+# for k, cond in enumerate(l_cond):
+#   print(cond)
+#   for s in speed[k]:
+#     print(float(s))
+
 
 # === Display ==============================================================
 
