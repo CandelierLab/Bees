@@ -9,17 +9,20 @@ os.system('clear')
 
 # === Parameters ===========================================================
 
+season = '2025 - Summer'
 stype = 'Social'      # 'Single' / 'Social'
 btype = 'foragers'    # 'foragers' / 'nurses'
+
+pix2mm = 0.11170251752954846
 
 # ==========================================================================
 
 # Data handler
 
-H = IP.handler(stype, btype)
+H = IP.handler(season, stype, btype)
 
 # row = H.df.iloc[3]
-row = H.df.loc[H.df['video code'] == 'MVI_0024'].iloc[2]
+row = H.df.loc[H.df['video code'] == 'C0001'].iloc[2]
 
 movie_code = row['video code']
 dish = row['petri dish place']
@@ -27,12 +30,10 @@ dish = row['petri dish place']
 print(row)
 print ('-'*25)
 
-P = IP.processor(H.type, movie_code, dish)
+P = IP.processor(H.type, movie_code, dish, pix2mm=pix2mm)
 
 # if not os.path.exists(P.file['traj']):
 #   P.check_background()
-
-# P.run()
 
 P.run(display=True, save_csv=False)
 

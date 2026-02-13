@@ -1,5 +1,7 @@
 '''
 Image processing tools
+
+NB: RWU 430pix for 90mm 
 '''
 
 import os
@@ -13,8 +15,6 @@ from alive_progress import alive_bar
 import matplotlib.pyplot as plt
 
 import project
-
-plt.style.use('dark_background')
 
 class Ellipse:
 
@@ -97,15 +97,13 @@ class handler:
 
 class processor:
 
-  def __init__(self, H:handler, movie_code, dish, nbees=2, pix2mm=None, verbose=False):
+  def __init__(self, dtype, movie_code, dish, pix2mm=None, verbose=False):
 
     # --- Definitions
 
-    self.handler = H
-    self.type = self.handler.type
+    self.type = dtype
     self.movie_code = movie_code
     self.dish = dish
-    self.nbees = nbees
     self.verbose = verbose
 
     self.th_area = None
@@ -146,9 +144,6 @@ class processor:
 
     # Background image
     self.file['background'] = self.dir + 'background.npy'
-
-    # Template
-    self.file['template'] = project.root + f'Files/{self.handler.season}/template.png'
 
     # CSV export
     self.file['traj'] = self.dir + 'trajectories.csv'
@@ -207,111 +202,13 @@ class processor:
       if self.verbose:
         print('{:.2f} sec'.format(time.time() - tref))
 
-  def load_template(self, path=None):
-    '''
-    Ouvrir et retourner une image PNG depuis le disque.
-    `path` peut être un chemin absolu ou relatif.
-    '''
-
-    if path is None:
-      path = self.file['template']
-
-    # Expand user and get absolute path
-    p = os.path.expanduser(path)
-    p = os.path.abspath(p)
-
-    if not os.path.exists(p):
-      raise FileNotFoundError(f"Template not found: {path}")
-
-    # Read image (preserve alpha if present)
-    img = cv.imread(p, cv.IMREAD_UNCHANGED)
-    if img is None:
-      raise ValueError(f"Could not read image: {p}")
-
-    if self.verbose:
-      print(f'Loaded template: {p}')
-
-    img = img[:,:,0].astype(float)
-    img = (img - np.min(img))/(np.max(img) - np.min(img))
-
-    return img
-
-  def set_template(self, template, x, y, angle, pad_value=0.0):
-    '''
-    Retourne une grande image contenant `template` positionnée au centre `(x,y)`
-    et tournée de `angle` radians. `template` doit être un tableau 2D float
-    avec valeurs en [0,1]. `pad_value` (float) remplit les pixels non définis.
-
-    La taille de l'image de sortie est déterminée par `self.param['width']`/`height`
-    si `self.param` est disponible, sinon par `self.background` si existante.
-    Le point `(x,y)` correspond au centre du template dans l'image de sortie.
-    '''
-
-    # Convertir et valider le template
-    T = np.array(template, dtype=np.float32)
-    if T.ndim != 2:
-      raise ValueError('Template must be a single-channel (2D) array')
-
-    th, tw = T.shape
-
-    # Rotation autour du centre du template (cv expects degrees)
-    angle_deg = float(angle) * 180.0 / np.pi
-    center = (tw/2.0, th/2.0)
-    M = cv.getRotationMatrix2D(center, angle_deg, 1.0)
-    rotated = cv.warpAffine(T, M, (tw, th), flags=cv.INTER_LINEAR,
-                             borderMode=cv.BORDER_CONSTANT, borderValue=float(pad_value))
-
-    # Taille de sortie: préférer self.param, sinon self.background
-    if getattr(self, 'param', None) is not None:
-      H = int(self.param['height'])
-      W = int(self.param['width'])
-    elif getattr(self, 'background', None) is not None:
-      H, W = self.background.shape
-    else:
-      raise RuntimeError('Cannot determine output size: load parameters or background first')
-
-    out = np.full((H, W), float(pad_value), dtype=np.float32)
-
-    # Positionner le template centré en (x,y)
-    cx = float(x)
-    cy = float(y)
-    x0 = int(round(cx - tw/2.0))
-    y0 = int(round(cy - th/2.0))
-    x1 = x0 + tw
-    y1 = y0 + th
-
-    # Calcul des intersections (template -> out)
-    sx0 = max(0, -x0)
-    sy0 = max(0, -y0)
-    sx1 = tw - max(0, x1 - W)
-    sy1 = th - max(0, y1 - H)
-
-    dx0 = max(0, x0)
-    dy0 = max(0, y0)
-    dx1 = dx0 + (sx1 - sx0)
-    dy1 = dy0 + (sy1 - sy0)
-
-    # Pas de recouvrement
-    if sx1 <= sx0 or sy1 <= sy0:
-      return out
-
-    out[dy0:dy1, dx0:dx1] = rotated[sy0:sy1, sx0:sx1]
-
-    if self.verbose:
-      print(f'Set template at ({cx:.1f},{cy:.1f}) angle={angle_deg:.1f}°')
-
-    return out
-
-  def get_frame(self, n=None, cap=None):
+  def get_frame(self, cap, n=None):
     '''
     Get a cropped frame in gray scale
     '''
 
-    if cap is None:
-      cap = cv.VideoCapture(self.file['movie']['path'])
-
     if n is not None:
-      cap.set(cv.CAP_PROP_POS_FRAMES, n)
+        cap.set(cv.CAP_PROP_POS_FRAMES, n)
 
     ret, frame = cap.read()
     if not ret: return None
@@ -322,11 +219,7 @@ class processor:
     # Crop image
     return frame if self.param is None else frame[self.param['ROI'][2]:self.param['ROI'][3], self.param['ROI'][0]:self.param['ROI'][1]]
 
-  def get_pix2mm(self, cap=None):
-
-    # --- Movie
-    if cap is None:
-      cap = cv.VideoCapture(self.file['movie']['path'])
+  def get_pix2mm(self, cap):
 
     # --- Initial frame    
     Img = self.get_frame(cap)
@@ -363,7 +256,7 @@ class processor:
           r = a*b*c/4/A
 
           # pix2mm coefficient (90mm Petri dishes)
-          self.pix2mm = float(45/r)
+          self.pix2mm = 45/r
 
           print(f'{self.movie_code}_{self.dish} | RWU conversion coefficient: {self.pix2mm}')
 
@@ -375,32 +268,11 @@ class processor:
     cv.destroyAllWindows()
     
     return self.pix2mm
-
-  def set_pix2mm(self, pix2mm):
-    '''
-    Set the pix2mm parameter in the YAML parameters file.
-    '''
-    # Load current parameters
-    with open(self.file['parameters'], 'r') as stream:
-      params = yaml.safe_load(stream)
-    
-    # Update pix2mm parameter
-    params['pix2mm'] = pix2mm
-    
-    # Save updated parameters
-    with open(self.file['parameters'], 'w') as stream:
-      yaml.dump(params, stream)
-    
-    # Reload parameters
-    self.load_parameters()
-    
-    if self.verbose:
-      print(f'Updated pix2mm to {pix2mm}')
-
-  def define_background(self, force=False):
+  
+  def define_background(self):
 
     # Check existence
-    if os.path.exists(self.file['background']) and not force:
+    if os.path.exists(self.file['background']):
 
       if self.verbose:
         print('Loading background ... ', end='')
@@ -514,35 +386,11 @@ class processor:
     cv.waitKey(0)
     cv.destroyAllWindows()
 
-  def show(self, Img, norm=False, show=True):
+  def show(self, Img):
 
-    if norm:
-      Img = (Img - np.min(Img))/(np.max(Img) - np.min(Img))
-
-    # cv.imshow('show', Img)
-    # cv.waitKey(0)
-    # cv.destroyAllWindows()
-
-    fig, ax = plt.subplots(1,1, figsize=(8,8))
-    I = ax.pcolormesh(Img, cmap=plt.cm.gray, vmin=0, vmax=1)
-    cb = plt.colorbar(I)
-
-    if show:
-      plt.show()
-
-  def show_fusion(self, img0, img1, show=True):
-
-    res = np.dstack([img0, img1, img0])
-
-    # cv.imshow('fusion', res)
-    # cv.waitKey(0)
-    # cv.destroyAllWindows()
-
-    fig, ax = plt.subplots(1,1, figsize=(8,8))
-    I = ax.imshow(res)
-
-    if show:
-      plt.show()
+    cv.imshow('frame', Img)
+    cv.waitKey(0)
+    cv.destroyAllWindows()
 
   def display_traj(self):
 
@@ -583,127 +431,146 @@ class processor:
         break
 
   # ========================================================================
-  def process(self, img, X, Y, A):
+  def process(self, Img, kind='Social'):
 
-    # Increments
-    l_t_inc = [5, 1]
-    l_a_inc = [np.pi/36, np.pi/180]
+    Tmp = self.background - Img
 
-    def corr(A,B):
-      return np.corrcoef(A.flatten(), B.flatten())[0,1].item()
-
-    def get_corr(X, Y, A, k=0, dx=0, dy=0, da=0):
-      T0 = self.set_template(self.template, X[0] + (0 if k else dx), 
-                                Y[0] + (0 if k else dy),
-                                A[0] + (0 if k else da))
-      T1 = self.set_template(self.template, X[1] + (dx if k else 0), 
-                                Y[1] + (dy if k else 0),
-                                A[1] + (da if k else 0))
-      return corr(img, np.maximum(T0, T1))
-
-    def print_state(X, Y, A, C):
-      if self.verbose:
-        print(f'C={C} ({X[0]:d}, {Y[0]:d},{A[0]:.02f}) ({X[1]:d}, {Y[1]:d},{A[1]:.02f})')
-
-    # Transform image
-    res = self.background - img
-    res[res<0] = 0
-    img = (res - np.min(res))/(np.max(res) - np.min(res))
+    _, BW = cv.threshold(Tmp, 0.03, 1, cv.THRESH_BINARY)
+    self.BW = BW
     
-    # Initial values
-    C = get_corr(X, Y, A)
-    print_state(X, Y, A, C)
+    match kind:
 
-    # ======================================================================
-    # Iterative procedure
+      case 'Single':
 
-    for (t_inc, a_inc) in zip(l_t_inc, l_a_inc):
+        # --- Find largest object      
+        cnts, _ = cv.findContours(BW.astype(np.uint8), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+        if not len(cnts): return [None]
+        cnt = max(cnts, key=cv.contourArea)
 
-      opt = False
+        # Result
+        BW = np.zeros(Img.shape, np.uint8)
+        cv.drawContours(BW, [cnt], -1, 255, cv.FILLED)
 
-      while opt:
+        # --- Compute equivalent ellipse
 
-        if self.verbose:
-          print(f'Iteration @ ({t_inc:d}, {a_inc:.02f})')
+        return [Ellipse(BW)]
+      
+      case 'Social':
 
-        opt = False
+        # --- Sort objects by area
 
-        for k in range(self.nbees):
+        cnts, _ = cv.findContours(BW.astype(np.uint8), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+        if not len(cnts): return [None, None]
 
-          # === Angular optimization =================
+        cnts = sorted(cnts, key=cv.contourArea, reverse=True)
 
-          # --- Positive a
+        # Initialization of the area threshold
+        if self.th_area is None and len(cnts)>1:
+          self.th_area = (cv.contourArea(cnts[0]) + cv.contourArea(cnts[1]))/4
 
-          aneg = True
+        # --- First ellipse
 
-          while True:
+        if len(cnts)==0 or (self.th_area is not None and cv.contourArea(cnts[0])<self.th_area):
+          return []
+        else:
+          BW = np.zeros(Img.shape, np.uint8)
+          cv.drawContours(BW, [cnts[0]], -1, 255, cv.FILLED)
+          E1 = Ellipse(BW)          
 
-            c = get_corr(X, Y, A, k, da=a_inc) 
-            if c>C:
-              A[k] += a_inc
-              C = c
-              aneg = False
-              opt = True
-              print_state(X, Y, A, C)
-            else:
-              break
+        # --- Second ellipse
 
-          # --- Negative a
+        if len(cnts)<2 or cv.contourArea(cnts[1])<self.th_area:
+          return [E1]
 
-          if aneg:
-            while True:
+        else:
+          BW = np.zeros(Img.shape, np.uint8)
+          cv.drawContours(BW, [cnts[1]], -1, 255, cv.FILLED)
+          E2 = Ellipse(BW)
 
-              c = get_corr(X, Y, A, k, da=-a_inc) 
-              if c>C:
-                A[k] -= a_inc
-                C = c
-                opt = True
-                print_state(X, Y, A, C)
-              else:
-                break
+        return [E1, E2]
 
-          # === Translation optimization =================
+  # ========================================================================
+  def process2(self, Img, kind='Social'):
 
-          # --- Try all orientations
+    Tmp = self.background - Img
 
-          l_xy = [[t_inc,0],[t_inc, t_inc],[0,t_inc],[-t_inc,t_inc],[-t_inc,0],[-t_inc,-t_inc],[0,-t_inc],[t_inc,-t_inc]]
-          c = [get_corr(X, Y, A, k, dx=xy[0], dy=xy[1]) for xy in l_xy]
-          i = np.argmax(c)
+    _, BW = cv.threshold(Tmp, 0.03, 1, cv.THRESH_BINARY)
+    self.BW = BW
+    
+    # Erode
+    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE,(5,5))
+    # kernel = np.ones((3, 3))
+    res = cv.erode(Tmp, kernel, iterations=2)
+    res[res<0] = 0
 
-          if c[i]>C:
-            dx = l_xy[i][0]
-            dy = l_xy[i][1]
-            
-            # Store improvement
-            X[k] += dx
-            Y[k] += dy
-            C = c[i]
-            opt = True
-            print_state(X, Y, A, C)
+    norm = cv.normalize(res, None, 0, 255, norm_type=cv.NORM_MINMAX, dtype=cv.CV_8U)
+    cv.imshow("test", norm)
+    cv.waitKey(0)
 
-            # Pursue in that direction
-            while True:
+    match kind:
 
-              c = get_corr(X, Y, A, k, dx=dx, dy=dy) 
-              if c>C:
-                X[k] += dx
-                Y[k] += dy
-                C = c
-                print_state(X, Y, A, C)
-              else:
-                break
+      case 'Single':
 
-    return (X, Y, A)
+        # --- Find largest object      
+        cnts, _ = cv.findContours(BW.astype(np.uint8), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+        if not len(cnts): return [None]
+        cnt = max(cnts, key=cv.contourArea)
+
+        # Result
+        BW = np.zeros(Img.shape, np.uint8)
+        cv.drawContours(BW, [cnt], -1, 255, cv.FILLED)
+
+        # --- Compute equivalent ellipse
+
+        return [Ellipse(BW)]
+      
+      case 'Social':
+
+        # --- Sort objects by area
+
+        cnts, _ = cv.findContours(BW.astype(np.uint8), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+        if not len(cnts): return [None, None]
+
+        cnts = sorted(cnts, key=cv.contourArea, reverse=True)
+
+        # print(len(cnts))
+
+        # Initialization of the area threshold
+        if self.th_area is None and len(cnts)>1:
+          self.th_area = (cv.contourArea(cnts[0]) + cv.contourArea(cnts[1]))/4
+
+        # --- First ellipse
+
+        if len(cnts)==0 or (self.th_area is not None and cv.contourArea(cnts[0])<self.th_area):
+          return []
+        else:
+          BW = np.zeros(Img.shape, np.uint8)
+          cv.drawContours(BW, [cnts[0]], -1, 255, cv.FILLED)
+          E1 = Ellipse(BW)          
+
+        # --- Second ellipse
+
+        if len(cnts)<2 or cv.contourArea(cnts[1])<self.th_area:
+          return [E1]
+
+        else:
+          BW = np.zeros(Img.shape, np.uint8)
+          cv.drawContours(BW, [cnts[1]], -1, 255, cv.FILLED)
+          E2 = Ellipse(BW)
+
+        return [E1, E2]
       
   # ========================================================================
-  def run(self, display=False, save_csv=True, moviefile=None):
+  def run(self, kind=None, display=False, save_csv=True, moviefile=None):
     '''
     Process the movie
     '''
 
-    cross = [35, 20]
-
     # --- Preparation ------------------------------------------------------
+
+    if kind is None:
+      if 'Single' in self.type: kind = 'Single'
+      if 'Social' in self.type: kind = 'Social'
 
     # Input video 
     cap = cv.VideoCapture(self.file['movie']['path'])
@@ -716,90 +583,122 @@ class processor:
     if moviefile is not None:
       vfile = cv.VideoWriter(moviefile, cv.VideoWriter_fourcc(*'MJPG'), fps=25, frameSize=(self.param['width'], self.param['height'])) 
 
-    # Template
-    self.template = self.load_template()
-
-    # --- Initial positions ------------------------------------------------
-
-    X = [580, 490]
-    Y = [650, 130]
-    A = [4.5, 4.5]
-
     # --- Processing -------------------------------------------------------
 
     with alive_bar(self.param['T']-1) as bar:
 
       frame = 0
       t = 0
-      traces = [[] for i in range(self.nbees)]
+      Eref = None
+      bmerge = None
+      traces = [[]] if kind=='Single' else [[], []]
 
       bar.title(self.file['movie']['filename'][-14:-4])
       
       while cap.isOpened():
 
-        frame = self.get_frame(cap=cap)
-        if frame is None: break
+        Img = self.get_frame(cap)
+        if Img is None: break
       
         # --- Processing ---------------------------------------------------
 
-        X, Y, A = self.process(frame, X, Y, A)
-        
-        # --- Save ---------------------------------------------------------
+        E = self.process2(Img, kind=kind)
 
-        if save_csv:
+        match kind:
 
-          pass
+          case 'Single':
 
-          # Data.append([0, frame, t, E[0].x*self.param['pix2mm'], E[0].y*self.param['pix2mm'], E[0].theta, E[0].m00])
-      
-          # Data.append([0, frame, t,
-          #               E[0].x*self.param['pix2mm'], 
-          #               E[0].y*self.param['pix2mm'], 
-          #               E[0].theta, 
-          #               E[0].m00])
-          
-          # if not bmerge and len(E)>1:
-          #   Data.append([1, frame, t,
-          #                 E[1].x*self.param['pix2mm'], 
-          #                 E[1].y*self.param['pix2mm'], 
-          #                 E[1].theta,
-          #                 E[1].m00])
+            # --- Miss: use reference
+
+            if E[0] is None:
+              E = Eref
+            else:
+              Eref = E
+
+            # --- Save
+
+            if save_csv:
+              Data.append([0, frame, t, E[0].x*self.param['pix2mm'], E[0].y*self.param['pix2mm'], E[0].theta, E[0].m00])
+
+          case 'Social':
+
+            if Eref is not None:
+
+              match len(E):
+
+                case 0:
+                  E = Eref
+                  bmerge = True if len(E)==1 else False
+
+                case 1:
+
+                  bmerge = True
+
+                case 2:
+
+                  bmerge = False
+
+                  # --- Check inversions
+
+                  if Eref is not None and len(Eref)>1:
+
+                    # Squared distances to the references
+                    d00 = (E[0].x-Eref[0].x)**2 + (E[0].y-Eref[0].y)**2
+                    d01 = (E[0].x-Eref[1].x)**2 + (E[0].y-Eref[1].y)**2
+                    d10 = (E[1].x-Eref[0].x)**2 + (E[1].y-Eref[0].y)**2
+                    d11 = (E[1].x-Eref[1].x)**2 + (E[1].y-Eref[1].y)**2
+
+                    if d00+d11 > d01+d10: E = [E[1], E[0]]
+
+            # --- Reference update
+
+            Eref = E
+
+            # --- Save
+
+            if save_csv:
+              
+              Data.append([0, frame, t,
+                            E[0].x*self.param['pix2mm'], 
+                            E[0].y*self.param['pix2mm'], 
+                            E[0].theta, 
+                            E[0].m00])
+              
+              if not bmerge and len(E)>1:
+                Data.append([1, frame, t,
+                             E[1].x*self.param['pix2mm'], 
+                             E[1].y*self.param['pix2mm'], 
+                             E[1].theta,
+                             E[1].m00])
 
         # --- Display -------------------------------------------------------
 
         if display:
 
           # Images
-          norm = cv.normalize(frame, None, 0, 255, norm_type=cv.NORM_MINMAX, dtype=cv.CV_8U)
+          norm = cv.normalize(Img, None, 0, 255, norm_type=cv.NORM_MINMAX, dtype=cv.CV_8U)
           Res = cv.cvtColor(norm, cv.COLOR_GRAY2RGB)
 
-          # --- Markers & traces
+          # Display BW images (instead of grayscale)
+          # Res = cv.cvtColor(self.BW.astype(np.float32), cv.COLOR_GRAY2RGB)
 
-          # # Reset traces
-          # if len(E)!=len(traces):
-          #   traces = [[]] if bmerge else [[], []]
+          # --- Ellipses & traces
 
-          for i in range(self.nbees):
+          # Reset traces
+          if len(E)!=len(traces):
+            traces = [[]] if bmerge else [[], []]
 
-            if i: color = (255,255,0)
+          for i in range(len(E)):
+
+            if bmerge: color = (0,255,255)
+            elif i: color = (255,255,0)
             else: color = (255,0,255)
 
             # Ellipse
-            # Res = cv.ellipse(Res, (X[i], Y[i]), (10, 10), A[i]*180/np.pi, 0, 360, color=color, thickness=1)
-
-            # Cross
-            x = X[i]
-            y = Y[i]
-            x_end = int(x + cross[0]*np.cos(A[i]))
-            y_end = int(y + cross[0]*np.sin(A[i]))
-            Res = cv.line(Res, (x, y), (x_end, y_end), color=color, thickness=2)
-
-            dx = int(cross[1]/2*np.cos(A[i]+np.pi/2))
-            dy = int(cross[1]/2*np.sin(A[i]+np.pi/2))
-            Res = cv.line(Res, (int(x-dx), int(y-dy)), (x+dx, y+dy), color=color, thickness=2)
+            Res = cv.ellipse(Res, (int(E[i].x), int(E[i].y)), (int(E[i].l), int(E[i].w)), E[i].theta*180/np.pi, 0, 360, color=color, thickness=1)
 
             # Trace
-            traces[i].append((X[i], Y[i]))
+            traces[i].append((int(E[i].x), int(E[i].y)))
             while len(traces[i])>50: traces[i].pop(0)
             
             Res = cv.polylines(Res, [np.array(traces[i]).reshape((-1, 1, 2))], False, color=color, thickness=1)
