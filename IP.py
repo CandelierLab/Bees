@@ -838,7 +838,7 @@ class processor:
     # A = [2.2, 1.5]
 
     # C0001_3
-    cap.set(cv.CAP_PROP_POS_FRAMES, 6000)
+    cap.set(cv.CAP_PROP_POS_FRAMES, 0)
     X = [568, 510]
     Y = [296, 185]
     A = [2.5, -1]

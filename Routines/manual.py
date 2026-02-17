@@ -36,4 +36,4 @@ print(P)
 # P.check_background()
 
 # P.run(display=True, save_csv=False)
-P.run(save_csv=False, moviefile=f'/home/raphael/Science/Projects/Misc/Bees/Movies/test_{movie_code}_{dish}.mp4')
+P.run(save_csv=False, moviefile=f'/home/raphael/Science/Projects/Misc/Bees/Movies/test/test_{movie_code}_{dish}.mp4')
