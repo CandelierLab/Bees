@@ -2,13 +2,15 @@
 Image processing tools
 '''
 
-import os
+import os, sys
 import time
 import warnings
 import yaml
 import numpy as np
 import pandas as pd
 import cv2 as cv
+from multiprocessing import Pool, cpu_count
+
 from alive_progress import alive_bar
 import matplotlib.pyplot as plt
 
@@ -97,7 +99,7 @@ class handler:
 
 class processor:
 
-  def __init__(self, H:handler, movie_code, dish, nbees=2, pix2mm=None, verbose=False):
+  def __init__(self, H:handler, movie_code, dish, nbees=2, pix2mm=None, nthreads=None, verbose=False):
 
     # --- Definitions
 
@@ -153,6 +155,9 @@ class processor:
     # CSV export
     self.file['traj'] = self.dir + 'trajectories.csv'
 
+    # Scaling
+    self.scaling = None
+
     # --- Load associated data
 
     # Parameters
@@ -161,6 +166,11 @@ class processor:
     # Background image
     self.define_background()
     
+    # --- Multiprocessing
+
+    # self.nthreads = cpu_count()-1 if nthreads is None else nthreads
+    self.nthreads = 5 if nthreads is None else nthreads
+
   def __str__(self):
     
     s = f'\n--- {self.__class__.__name__} ---\n'
@@ -234,6 +244,13 @@ class processor:
     img = img[:,:,0].astype(float)
     img = (img - np.min(img))/(np.max(img) - np.min(img))
 
+    # Rescale
+    if self.scaling is not None:
+      img = cv.resize(img, None, fx=self.scaling, fy=self.scaling, interpolation=cv.INTER_LINEAR)
+
+    # Define flat_template
+    self.flat_template = np.concatenate((img.flatten(), img.flatten()))
+
     return img
 
   def set_template(self, template, x, y, angle, pad_value=0.0):
@@ -302,7 +319,7 @@ class processor:
 
     return out
 
-  def get_frame(self, n=None, cap=None):
+  def get_frame(self, n=None, cap=None, scale=False):
     '''
     Get a cropped frame in gray scale
     '''
@@ -311,7 +328,7 @@ class processor:
       cap = cv.VideoCapture(self.file['movie']['path'])
 
     if n is not None:
-      cap.set(cv.CAP_PROP_POS_FRAMES, n)
+      cap.set(cv.CAP_PROP_POS_FRAMES, int(n))
 
     ret, frame = cap.read()
     if not ret: return None
@@ -320,7 +337,13 @@ class processor:
     frame = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)/255
 
     # Crop image
-    return frame if self.param is None else frame[self.param['ROI'][2]:self.param['ROI'][3], self.param['ROI'][0]:self.param['ROI'][1]]
+    # frame = frame if self.param is None else frame[self.param['ROI'][2]:self.param['ROI'][3], self.param['ROI'][0]:self.param['ROI'][1]]
+
+    # Rescale
+    if self.scaling is not None:
+      frame = cv.resize(frame, None, fx=self.scaling, fy=self.scaling, interpolation=cv.INTER_LINEAR)
+
+    return frame
 
   def get_pix2mm(self, cap=None):
 
@@ -329,7 +352,7 @@ class processor:
       cap = cv.VideoCapture(self.file['movie']['path'])
 
     # --- Initial frame    
-    Img = self.get_frame(cap)
+    Img = self.get_frame(cap=cap)
     cap.release()
 
     self.RWU_pts = []
@@ -408,6 +431,10 @@ class processor:
 
       self.background = np.load(self.file['background'])
 
+      # Rescale
+      if self.scaling is not None:
+        self.background = cv.resize(self.background, None, fx=self.scaling, fy=self.scaling, interpolation=cv.INTER_LINEAR)
+
       if self.verbose:
         print('{:.2f} sec'.format(time.time() - tref))
 
@@ -431,16 +458,16 @@ class processor:
       # --- Build stack
         
       cap = cv.VideoCapture(self.file['movie']['path'])
-      t = 0
+      # t = 0
 
-      while cap.isOpened():
+      for t in range(Stack.shape[2]):
       
-        Img = self.get_frame(cap)
+        Img = self.get_frame(n=t*inc, cap=cap)
         if Img is None: break
         Stack[:,:,t] = Img
-        t += 1
+        # t += 1
 
-        cap.set(cv.CAP_PROP_POS_FRAMES, cap.get(cv.CAP_PROP_POS_FRAMES) + inc)
+        # cap.set(cv.CAP_PROP_POS_FRAMES, cap.get(cv.CAP_PROP_POS_FRAMES) + inc)
         
       cap.release()
 
@@ -614,6 +641,74 @@ class processor:
     C = get_corr(X, Y, A)
     print_state(X, Y, A, C)
 
+    # # # # Increments
+    # # # l_t_inc = [5, 1]
+    # # # l_a_inc = [np.pi/36, np.pi/180]
+
+    # # # def corr(A,B):
+    # # #   return np.corrcoef(A, B)[0,1].item()
+
+    # # # ih, iw = img.shape
+    # # # th, tw = self.template.shape
+
+    # # # def get_sub(x, y, a):
+
+    # # #   # Rotate image
+    # # #   rot_mat = cv.getRotationMatrix2D((x, y), -a*180/np.pi, 1.0)
+    # # #   tmp = cv.warpAffine(img, rot_mat, (iw, ih), flags=cv.INTER_LINEAR, borderValue=0)
+      
+    # # #   x0 = x - int(tw/2)
+    # # #   x1 = x + int(tw/2)
+    # # #   y0 = y - int(th/2)
+    # # #   y1 = y + int(th/2)
+
+    # # #   x0_ = max(x0, 0)
+    # # #   x1_ = min(x1, iw)
+    # # #   y0_ = max(y0, 0)
+    # # #   y1_ = min(y1, ih)
+
+    # # #   res = tmp[y0_:y1_, x0_:x1_]
+
+    # # #   if x0<0:
+    # # #     res = np.concatenate((np.zeros((th,-x0)), res), axis=1)
+
+    # # #   if x1>iw:
+    # # #     res = np.concatenate((res, np.zeros((th,x1-iw))), axis=1)
+
+    # # #   if y0<0:
+    # # #     res = np.concatenate((np.zeros((-y0, tw)), res), axis=0)
+
+    # # #   if y1>ih:
+    # # #     res = np.concatenate((res, np.zeros((y1-ih, tw))), axis=0)
+
+    # # #   return res
+
+    # # # def get_corr(X, Y, A, k=0, dx=0, dy=0, da=0):
+
+    # # #   S0 = get_sub(X[0] + (0 if k else dx),
+    # # #                Y[0] + (0 if k else dy),
+    # # #                A[0] + (0 if k else da)).flatten()
+      
+    # # #   S1 = get_sub(X[1] + (dx if k else 0),
+    # # #                Y[1] + (dy if k else 0),
+    # # #                A[1] + (da if k else 0)).flatten()
+
+    # # #   return corr(np.concatenate((S0, S1)), self.flat_template)
+
+    # # # def print_state(X, Y, A, C):
+    # # #   if self.verbose:
+    # # #     print(f'C={C} ({X[0]:d}, {Y[0]:d},{A[0]:.02f}) ({X[1]:d}, {Y[1]:d},{A[1]:.02f})')
+
+    # # # # Transform image
+    # # # res = self.background - img
+    # # # res[res<0] = 0
+    # # # img = (res - np.min(res))/(np.max(res) - np.min(res))
+
+    # # # # Initial values
+
+    # # # C = get_corr(X, Y, A)
+    # # # print_state(X, Y, A, C)
+
     # ======================================================================
     # Iterative procedure
 
@@ -662,6 +757,15 @@ class processor:
               else:
                 break
 
+          # --- Check inversion
+          
+          c = get_corr(X, Y, A, k, da=np.pi)
+          if c>C:
+            A[k] += np.pi
+            C = c
+            opt = True
+            print_state(X, Y, A, C)
+
           # === Translation optimization =================
 
           # --- Try all orientations
@@ -695,138 +799,6 @@ class processor:
 
     return (X, Y, A)
 
-  def process_fast(self, img, X, Y, A):
-    '''
-    Optimized version of process for speed using template caching 
-    and vectorized operations (~3-5x faster).
-    '''
-    
-    # Increments
-    l_t_inc = [5, 1]
-    l_a_inc = [np.pi/36, np.pi/180]
-    
-    # Convert to numpy arrays (copy to avoid modifying originals in-place initially)
-    X = np.array(X, dtype=np.int32, copy=True)
-    Y = np.array(Y, dtype=np.int32, copy=True)
-    A = np.array(A, dtype=np.float64, copy=True)
-    
-    def corr(A, B):
-      return np.corrcoef(A.flatten(), B.flatten())[0,1].item()
-    
-    # Transform image - optimized version
-    img_opt = self.background.astype(np.float32) - img.astype(np.float32)
-    img_opt[img_opt < 0] = 0
-    img_min = np.min(img_opt)
-    img_max = np.max(img_opt)
-    if img_max > img_min:
-      img_opt = (img_opt - img_min) / (img_max - img_min)
-    else:
-      img_opt.fill(0.5)
-    
-    # Template cache: stores computed templates to avoid redundant calculations
-    template_cache = {}
-    
-    def get_cached_template(x, y, a):
-      key = (int(x), int(y), float(a))
-      if key not in template_cache:
-        template_cache[key] = self.set_template(self.template, x, y, a)
-      return template_cache[key]
-    
-    def get_corr(X, Y, A, k=0, dx=0, dy=0, da=0):
-      """Correlation computation with template caching."""
-      T0 = get_cached_template(X[0] + (0 if k else dx),
-                               Y[0] + (0 if k else dy),
-                               A[0] + (0 if k else da))
-      T1 = get_cached_template(X[1] + (dx if k else 0),
-                               Y[1] + (dy if k else 0),
-                               A[1] + (da if k else 0))
-      return corr(img_opt, np.maximum(T0, T1))
-    
-    def print_state(X, Y, A, C):
-      if self.verbose:
-        print(f'C={C:.4f} ({X[0]:d}, {Y[0]:d},{A[0]:.03f}) ({X[1]:d}, {Y[1]:d},{A[1]:.03f})')
-    
-    # Initial values
-    C = get_corr(X, Y, A)
-    print_state(X, Y, A, C)
-    
-    # Pre-define direction vectors for translation (8-connected)
-    directions = np.array([
-      [1, 0], [1, 1], [0, 1], [-1, 1],
-      [-1, 0], [-1, -1], [0, -1], [1, -1]
-    ], dtype=np.int32)
-    
-    # ======================================================================
-    # Iterative procedure
-    
-    for t_inc, a_inc in zip(l_t_inc, l_a_inc):
-      
-      opt = True
-      
-      while opt:
-        
-        if self.verbose:
-          print(f'Iteration @ (t_inc={t_inc:d}, a_inc={a_inc:.04f})')
-        
-        opt = False
-        
-        for k in range(self.nbees):
-          
-          # === Angular optimization (optimized) =================
-          
-          # Try positive direction first
-          c_pos = get_corr(X, Y, A, k, da=a_inc)
-          
-          if c_pos > C:
-            A[k] += a_inc
-            C = c_pos
-            opt = True
-            print_state(X, Y, A, C)
-          else:
-            # Try negative direction
-            c_neg = get_corr(X, Y, A, k, da=-a_inc)
-            if c_neg > C:
-              A[k] -= a_inc
-              C = c_neg
-              opt = True
-              print_state(X, Y, A, C)
-          
-          # === Translation optimization (vectorized) =================
-          
-          # Evaluate all 8 directions efficiently
-          correlations = np.zeros(8)
-          for d_idx, (dx_dir, dy_dir) in enumerate(directions):
-            correlations[d_idx] = get_corr(X, Y, A, k, 
-                                           dx=dx_dir*t_inc, 
-                                           dy=dy_dir*t_inc)
-          
-          best_idx = np.argmax(correlations)
-          best_corr = correlations[best_idx]
-          
-          if best_corr > C:
-            dx, dy = directions[best_idx] * t_inc
-            
-            # Store improvement
-            X[k] += dx
-            Y[k] += dy
-            C = best_corr
-            opt = True
-            print_state(X, Y, A, C)
-            
-            # Pursue in that direction
-            while True:
-              c = get_corr(X, Y, A, k, dx=int(dx), dy=int(dy))
-              if c > C:
-                X[k] += dx
-                Y[k] += dy
-                C = c
-                print_state(X, Y, A, C)
-              else:
-                break
-    
-    return (X.tolist(), Y.tolist(), A.tolist())
-  
-      
   # ========================================================================
   def run(self, display=False, save_csv=True, moviefile=None):
     '''
@@ -846,25 +818,40 @@ class processor:
 
     # Output video
     if moviefile is not None:
-      vfile = cv.VideoWriter(moviefile, cv.VideoWriter_fourcc(*'MJPG'), fps=25, frameSize=(self.param['width'], self.param['height'])) 
+      display = True
+
+      if self.scaling is None:
+        fsize = (self.param['width'], self.param['height'])
+      else:
+        fsize = (int(self.param['width']*self.scaling), int(self.param['height']*self.scaling))
+
+      vfile = cv.VideoWriter(moviefile, cv.VideoWriter_fourcc(*'mp4v'), fps=25, frameSize=fsize) 
 
     # Template
     self.template = self.load_template()
 
     # --- Initial positions ------------------------------------------------
 
-    X = [580, 490]
-    Y = [650, 130]
-    A = [4.5, 4.5]
+    # # C0001_1
+    # X = [590, 490]
+    # Y = [680, 150]
+    # A = [2.2, 1.5]
+
+    # C0001_3
+    cap.set(cv.CAP_PROP_POS_FRAMES, 6000)
+    X = [568, 510]
+    Y = [296, 185]
+    A = [2.5, -1]
 
     # --- Processing -------------------------------------------------------
 
+    # Preparation
+    tframe = 0
+    t = 0
+    traces = [[] for i in range(self.nbees)]
+
     with alive_bar(self.param['T']-1) as bar:
-
-      frame = 0
-      t = 0
-      traces = [[] for i in range(self.nbees)]
-
+  
       bar.title(self.file['movie']['filename'][-14:-4])
       
       while cap.isOpened():
@@ -874,8 +861,20 @@ class processor:
       
         # --- Processing ---------------------------------------------------
 
-        X, Y, A = self.process_fast(frame, X, Y, A)
+        X, Y, A = self.process(frame, X, Y, A)
         
+        # pool = Pool(processes=(self.nthreads))
+
+        # for key, value in d.items():
+        #     pool.apply_async(thread_process, args=(key, value))
+
+        # pool.close()
+        # pool.join()
+
+
+        
+       
+
         # --- Save ---------------------------------------------------------
 
         if save_csv:
@@ -922,8 +921,8 @@ class processor:
             # Cross
             x = X[i]
             y = Y[i]
-            x_end = int(x + cross[0]*np.cos(np.pi-A[i]))
-            y_end = int(y + cross[0]*np.sin(np.pi-A[i]))
+            x_end = int(x + cross[0]*np.cos(-A[i]))
+            y_end = int(y + cross[0]*np.sin(-A[i]))
             Res = cv.line(Res, (x, y), (x_end, y_end), color=color, thickness=2)
 
             dx = int(cross[1]/2*np.cos(np.pi-A[i]+np.pi/2))
@@ -948,8 +947,8 @@ class processor:
 
         # --- Update
 
-        frame += 1
-        t = frame/self.param['fps']
+        tframe += 1
+        t = tframe/self.param['fps']
         bar()
 
     #  --- End -------------------------------------------------------------
@@ -962,7 +961,8 @@ class processor:
 
     # --- Save
 
-    if frame>=self.param['T']-2 and save_csv:
+    # if frame>=self.param['T']-2 and save_csv:
+    if save_csv:
       
       df = pd.DataFrame(Data, columns=['id', 'frame', 't', 'x', 'y', 'theta', 'area'])
       df.to_csv(self.file['traj'])

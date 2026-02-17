@@ -23,5 +23,5 @@ dish = 1
 H = IP.handler(season, stype, btype)
 
 # Processor
-P = IP.processor(H.type, movie_code, dish)
+P = IP.processor(H, movie_code, dish)
 

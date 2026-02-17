@@ -17,7 +17,7 @@ stype = 'Social'      # 'Single' / 'Social'
 btype = 'foragers'    # 'foragers' / 'nurses'
 
 movie_code = 'C0001'
-dish = 1
+dish = 3
 
 
 
@@ -27,7 +27,7 @@ dish = 1
 
 H = IP.handler(season, stype, btype)
 
-P = IP.processor(H, movie_code, dish)
+P = IP.processor(H, movie_code, dish, verbose=False)
 
 print(P)
 
@@ -35,4 +35,5 @@ print(P)
 
 # P.check_background()
 
-P.run(display=False, save_csv=False, moviefile='/home/raphael/Science/Projects/Misc/Bees/Movies/test.mp4')
+# P.run(display=True, save_csv=False)
+P.run(save_csv=False, moviefile=f'/home/raphael/Science/Projects/Misc/Bees/Movies/test_{movie_code}_{dish}.mp4')
